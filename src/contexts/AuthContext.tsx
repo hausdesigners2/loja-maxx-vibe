@@ -49,18 +49,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const checkAdmin = async (userId: string) => {
-    for (let attempt = 1; attempt <= 5; attempt += 1) {
-      const { data, error } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
+    for (let attempt = 1; attempt <= 8; attempt += 1) {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
+        .eq("role", "admin")
+        .maybeSingle();
 
       if (!error) {
-        setIsAdmin(Boolean(data));
-        return Boolean(data);
+        const admin = data?.role === "admin";
+        setIsAdmin(admin);
+        return admin;
       }
 
-      const retryable = error.code === "PGRST002" || error.message.toLowerCase().includes("schema cache");
+      const message = error.message.toLowerCase();
+      const retryable = error.code === "PGRST001" || error.code === "PGRST002" || message.includes("schema cache") || message.includes("connection");
       console.error(`checkAdmin attempt ${attempt} error:`, error);
-      if (!retryable || attempt === 5) break;
-      await wait(400 * attempt);
+      if (!retryable || attempt === 8) break;
+      await wait(700 * attempt);
     }
 
     setIsAdmin(false);
