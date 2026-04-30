@@ -20,14 +20,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
+      setLoading(true);
       setSession(sess);
       setUser(sess?.user ?? null);
       if (sess?.user) {
-        setTimeout(() => checkAdmin(sess.user.id), 0);
+        setTimeout(async () => {
+          await checkAdmin(sess.user.id);
+          setLoading(false);
+        }, 0);
       } else {
         setIsAdmin(false);
+        setLoading(false);
       }
     });
 
@@ -42,15 +49,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const checkAdmin = async (userId: string) => {
-    const { data, error } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .eq("role", "admin")
-      .maybeSingle();
-    if (error) console.error("checkAdmin error:", error);
-    console.log("checkAdmin result:", { userId, data, isAdmin: !!data });
-    setIsAdmin(!!data);
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      const { data, error } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
+
+      if (!error) {
+        setIsAdmin(Boolean(data));
+        return Boolean(data);
+      }
+
+      const retryable = error.code === "PGRST002" || error.message.toLowerCase().includes("schema cache");
+      console.error(`checkAdmin attempt ${attempt} error:`, error);
+      if (!retryable || attempt === 5) break;
+      await wait(400 * attempt);
+    }
+
+    setIsAdmin(false);
+    return false;
   };
 
   const signIn = async (email: string, password: string) => {
