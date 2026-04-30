@@ -31,10 +31,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    supabase.auth.getSession().then(({ data: { session: sess } }) => {
+    supabase.auth.getSession().then(async ({ data: { session: sess } }) => {
       setSession(sess);
       setUser(sess?.user ?? null);
-      if (sess?.user) checkAdmin(sess.user.id);
+      if (sess?.user) await checkAdmin(sess.user.id);
       setLoading(false);
     });
 
@@ -42,12 +42,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const checkAdmin = async (userId: string) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", userId)
       .eq("role", "admin")
       .maybeSingle();
+    if (error) console.error("checkAdmin error:", error);
+    console.log("checkAdmin result:", { userId, data, isAdmin: !!data });
     setIsAdmin(!!data);
   };
 
