@@ -20,51 +20,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, sess) => {
+      setLoading(true);
       setSession(sess);
       setUser(sess?.user ?? null);
       if (sess?.user) {
-        setTimeout(() => { checkAdmin(sess.user.id); }, 0);
+        await checkAdmin();
       } else {
         setIsAdmin(false);
       }
+      setLoading(false);
     });
 
     supabase.auth.getSession().then(async ({ data: { session: sess } }) => {
       setSession(sess);
       setUser(sess?.user ?? null);
-      if (sess?.user) await checkAdmin(sess.user.id);
+      if (sess?.user) await checkAdmin();
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const checkAdmin = async (userId: string) => {
-    for (let attempt = 1; attempt <= 5; attempt += 1) {
-      try {
-        const { data, error } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", userId);
-
-        if (!error) {
-          const admin = (data ?? []).some((r) => r.role === "admin");
-          console.log("[checkAdmin]", { userId, rows: data, admin });
-          setIsAdmin(admin);
-          return admin;
-        }
-        console.error(`[checkAdmin] attempt ${attempt} error:`, error);
-      } catch (e) {
-        console.error(`[checkAdmin] attempt ${attempt} threw:`, e);
-      }
-      await wait(600 * attempt);
-    }
-    setIsAdmin(false);
-    return false;
+  const checkAdmin = async () => {
+    const { data, error } = await supabase.functions.invoke<{ isAdmin: boolean }>("admin-status");
+    const admin = !error && data?.isAdmin === true;
+    setIsAdmin(admin);
+    return admin;
   };
 
   const signIn = async (email: string, password: string) => {
