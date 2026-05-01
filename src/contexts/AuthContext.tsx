@@ -21,31 +21,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, sess) => {
-      setLoading(true);
+    const applySession = async (sess: Session | null) => {
       setSession(sess);
       setUser(sess?.user ?? null);
       if (sess?.user) {
-        await checkAdmin();
+        await checkAdmin(sess.user.id);
       } else {
         setIsAdmin(false);
       }
       setLoading(false);
+    };
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
+      setLoading(true);
+      setTimeout(() => { void applySession(sess); }, 0);
     });
 
     supabase.auth.getSession().then(async ({ data: { session: sess } }) => {
-      setSession(sess);
-      setUser(sess?.user ?? null);
-      if (sess?.user) await checkAdmin();
-      setLoading(false);
+      await applySession(sess);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const checkAdmin = async () => {
-    const { data, error } = await supabase.functions.invoke<{ isAdmin: boolean }>("admin-status");
-    const admin = !error && data?.isAdmin === true;
+  const checkAdmin = async (userId: string) => {
+    const timeout = new Promise<false>((resolve) => {
+      window.setTimeout(() => resolve(false), 5000);
+    });
+    const roleCheck = supabase
+      .rpc("has_role", { _user_id: userId, _role: "admin" })
+      .then(({ data, error }) => (!error && data === true));
+
+    const admin = await Promise.race([roleCheck, timeout]);
     setIsAdmin(admin);
     return admin;
   };
