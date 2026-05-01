@@ -21,7 +21,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
+
     const applySession = async (sess: Session | null) => {
+      if (!active) return;
       setSession(sess);
       setUser(sess?.user ?? null);
       if (sess?.user) {
@@ -29,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setIsAdmin(false);
       }
-      setLoading(false);
+      if (active) setLoading(false);
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
@@ -37,20 +40,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setTimeout(() => { void applySession(sess); }, 0);
     });
 
-    supabase.auth.getSession().then(async ({ data: { session: sess } }) => {
-      await applySession(sess);
-    });
+    const initialTimeout = window.setTimeout(() => {
+      if (active) setLoading(false);
+    }, 3500);
 
-    return () => subscription.unsubscribe();
+    supabase.auth.getSession()
+      .then(async ({ data: { session: sess } }) => {
+        window.clearTimeout(initialTimeout);
+        await applySession(sess);
+      })
+      .catch(() => {
+        window.clearTimeout(initialTimeout);
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+      window.clearTimeout(initialTimeout);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const checkAdmin = async (userId: string) => {
     const timeout = new Promise<false>((resolve) => {
       window.setTimeout(() => resolve(false), 5000);
     });
-    const roleCheck = supabase
-      .rpc("has_role", { _user_id: userId, _role: "admin" })
-      .then(({ data, error }) => (!error && data === true));
+    const roleCheck = supabase.functions
+      .invoke<{ isAdmin: boolean }>("admin-status", { body: { userId } })
+      .then(({ data, error }) => (!error && data?.isAdmin === true))
+      .catch(() => false);
 
     const admin = await Promise.race([roleCheck, timeout]);
     setIsAdmin(admin);
