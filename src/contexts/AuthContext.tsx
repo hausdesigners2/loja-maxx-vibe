@@ -65,10 +65,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const timeout = new Promise<false>((resolve) => {
       window.setTimeout(() => resolve(false), 5000);
     });
-    const roleCheck = supabase.functions
-      .invoke<{ isAdmin: boolean }>("admin-status", { body: { userId } })
-      .then(({ data, error }) => (!error && data?.isAdmin === true))
-      .catch(() => false);
+    const roleCheck: Promise<boolean> = (async () => {
+      try {
+        const { data, error } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
+        return !error && data === true;
+      } catch { return false; }
+    })();
 
     const admin = await Promise.race([roleCheck, timeout]);
     setIsAdmin(admin);
