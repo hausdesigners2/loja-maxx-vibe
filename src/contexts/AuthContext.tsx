@@ -65,9 +65,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const timeout = new Promise<false>((resolve) => {
       window.setTimeout(() => resolve(false), 5000);
     });
-    const roleCheck = supabase.functions
-      .invoke<{ isAdmin: boolean }>("admin-status", { body: { userId } })
-      .then(({ data, error }) => (!error && data?.isAdmin === true))
+    const roleCheck = supabase
+      .rpc("has_role", { _user_id: userId, _role: "admin" })
+      .then(({ data, error }) => (!error && data === true))
       .catch(() => false);
 
     const admin = await Promise.race([roleCheck, timeout]);
