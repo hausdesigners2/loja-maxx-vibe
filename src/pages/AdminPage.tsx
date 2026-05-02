@@ -56,7 +56,19 @@ export default function AdminPage() {
     setCategories(c ?? []);
   };
 
-  useEffect(() => { if (isAdmin) reload(); }, [isAdmin]);
+  // Re-verify admin role on mount via secure RPC and log access attempts.
+  useEffect(() => {
+    if (loading) return;
+    if (!user) return;
+    (async () => {
+      const { data, error } = await supabase.rpc("has_role", { _user_id: user.id, _role: "admin" });
+      const ok = !error && data === true;
+      void import("@/lib/security").then(({ logSecurityEvent }) =>
+        logSecurityEvent(ok ? "admin_access" : "admin_access_denied", { userId: user.id, email: user.email })
+      );
+      if (ok) reload();
+    })();
+  }, [loading, user]);
 
   if (loading) return <div className="p-8 text-center text-sm text-muted-foreground">Carregando...</div>;
   if (!user) return <Navigate to="/auth" replace />;
