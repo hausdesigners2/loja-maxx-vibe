@@ -75,6 +75,9 @@ export default function CartPage() {
               Finalizar pelo WhatsApp
             </Button>
           </a>
+          <Button asChild size="lg" variant="outline" className="h-12 w-full text-sm font-semibold">
+            <Link to="/">Colocar outros produtos no carrinho</Link>
+          </Button>
           <p className="text-center text-[11px] text-muted-foreground">Você será redirecionado para o WhatsApp com o pedido pronto.</p>
         </div>
       </div>
