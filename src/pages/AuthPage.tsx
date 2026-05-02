@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
+import { authSchema, friendlyAuthError } from "@/lib/security";
 
 export default function AuthPage() {
   const { signIn, signUp } = useAuth();
@@ -16,15 +17,18 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
 
   const handle = async (mode: "in" | "up") => {
-    if (!email || password.length < 6) {
-      toast.error("Informe email e senha (mín. 6 caracteres).");
+    const parsed = authSchema.safeParse({ email, password });
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Dados inválidos.");
       return;
     }
     setLoading(true);
-    const { error } = mode === "in" ? await signIn(email, password) : await signUp(email, password);
+    const { error } = mode === "in"
+      ? await signIn(parsed.data.email, parsed.data.password)
+      : await signUp(parsed.data.email, parsed.data.password);
     setLoading(false);
-    if (error) { toast.error(error); return; }
-    toast.success(mode === "in" ? "Bem-vindo!" : "Conta criada!");
+    if (error) { toast.error(friendlyAuthError(error)); return; }
+    toast.success(mode === "in" ? "Bem-vindo!" : "Conta criada! Verifique seu email.");
     nav("/conta");
   };
 

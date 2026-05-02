@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { logSecurityEvent } from "@/lib/security";
 
 interface AuthContextValue {
   user: User | null;
@@ -14,12 +15,42 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// 30 minutes of inactivity → automatic logout
+const INACTIVITY_MS = 30 * 60 * 1000;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const inactivityTimer = useRef<number | null>(null);
 
+  /* ---------- inactivity logout ---------- */
+  useEffect(() => {
+    if (!session) return;
+
+    const reset = () => {
+      if (inactivityTimer.current) window.clearTimeout(inactivityTimer.current);
+      inactivityTimer.current = window.setTimeout(async () => {
+        await logSecurityEvent("session_timeout", {
+          userId: session.user.id,
+          email: session.user.email,
+        });
+        await supabase.auth.signOut();
+      }, INACTIVITY_MS);
+    };
+
+    const events: (keyof WindowEventMap)[] = ["mousemove", "keydown", "click", "scroll", "touchstart"];
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+
+    return () => {
+      if (inactivityTimer.current) window.clearTimeout(inactivityTimer.current);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+  }, [session]);
+
+  /* ---------- session sync ---------- */
   useEffect(() => {
     let active = true;
 
@@ -37,6 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
       setLoading(true);
+      // defer to avoid deadlocks with supabase calls inside the callback
       setTimeout(() => { void applySession(sess); }, 0);
     });
 
@@ -62,47 +94,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const checkAdmin = async (userId: string) => {
-    const timeout = new Promise<false>((resolve) => {
-      window.setTimeout(() => resolve(false), 10000);
-    });
-    const roleCheck: Promise<boolean> = (async () => {
+    const timeout = new Promise<false>((resolve) => window.setTimeout(() => resolve(false), 8000));
+    const check: Promise<boolean> = (async () => {
       try {
-        const { data: roleRow, error: roleError } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", userId)
-          .eq("role", "admin")
-          .maybeSingle();
-
-        if (!roleError && roleRow?.role === "admin") return true;
-
-        const { data: rpcData, error: rpcError } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
-        if (!rpcError && rpcData === true) return true;
-
-        const { data: functionData, error: functionError } = await supabase.functions.invoke("admin-status");
-        return !functionError && functionData?.isAdmin === true;
-      } catch { return false; }
+        const { data, error } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
+        return !error && data === true;
+      } catch {
+        return false;
+      }
     })();
-
-    const admin = await Promise.race([roleCheck, timeout]);
+    const admin = await Promise.race([check, timeout]);
     setIsAdmin(admin);
     return admin;
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      void logSecurityEvent("login_failed", { email, metadata: { reason: error.message } });
+    } else {
+      void logSecurityEvent("login_success", { email, userId: data.user?.id });
+    }
     return { error: error?.message ?? null };
   };
 
   const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
-      email, password,
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
       options: { emailRedirectTo: `${window.location.origin}/` },
     });
+    if (error) {
+      void logSecurityEvent("signup_failed", { email, metadata: { reason: error.message } });
+    } else {
+      void logSecurityEvent("signup_success", { email, userId: data.user?.id });
+    }
     return { error: error?.message ?? null };
   };
 
-  const signOut = async () => { await supabase.auth.signOut(); };
+  const signOut = async () => {
+    const current = session?.user;
+    if (current) await logSecurityEvent("logout", { userId: current.id, email: current.email });
+    await supabase.auth.signOut();
+  };
 
   return (
     <AuthContext.Provider value={{ user, session, isAdmin, loading, signIn, signUp, signOut }}>
