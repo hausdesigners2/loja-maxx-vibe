@@ -70,7 +70,8 @@ export async function logSecurityEvent(
   opts: { userId?: string | null; email?: string | null; metadata?: Record<string, unknown> } = {},
 ): Promise<void> {
   try {
-    await supabase.from("security_logs").insert({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (supabase.from("security_logs" as any) as any).insert({
       event_type,
       user_id: opts.userId ?? null,
       email: opts.email ? sanitizeText(opts.email, 320) : null,
