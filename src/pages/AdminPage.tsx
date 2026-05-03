@@ -140,9 +140,14 @@ export default function AdminPage() {
             <ChevronLeft className="h-4 w-4" /> Loja
           </Link>
           <h1 className="text-base font-bold">Painel Admin</h1>
-          <Button size="sm" className="gradient-primary" onClick={openNew}>
-            <Plus className="mr-1 h-4 w-4" /> Novo
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link to="/admin/banners">Banners</Link>
+            </Button>
+            <Button size="sm" className="gradient-primary" onClick={openNew}>
+              <Plus className="mr-1 h-4 w-4" /> Novo
+            </Button>
+          </div>
         </div>
       </header>
 
