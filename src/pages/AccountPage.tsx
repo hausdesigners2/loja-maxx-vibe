@@ -15,7 +15,7 @@ export default function AccountPage() {
             <UserIcon className="h-10 w-10 text-muted-foreground" />
           </div>
           <h1 className="text-xl font-bold">Entrar na Loja Maxx</h1>
-          <p className="max-w-xs text-sm text-muted-foreground">Faça login para sincronizar favoritos e acessar o painel admin.</p>
+          <p className="max-w-xs text-sm text-muted-foreground">Faça login ou crie sua conta para aproveitar todas as vantagens!</p>
           <Button asChild className="gradient-primary shadow-glow"><Link to="/auth">Entrar / Criar conta</Link></Button>
         </div>
       </AppShell>
