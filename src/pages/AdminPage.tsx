@@ -142,6 +142,9 @@ export default function AdminPage() {
           <h1 className="text-base font-bold">Painel Admin</h1>
           <div className="flex items-center gap-2">
             <Button asChild size="sm" variant="outline">
+              <Link to="/admin/dashboard">Pedidos</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
               <Link to="/admin/banners">Banners</Link>
             </Button>
             <Button size="sm" className="gradient-primary" onClick={openNew}>
