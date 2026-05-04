@@ -80,6 +80,51 @@ export type Database = {
         }
         Relationships: []
       }
+      customer_profiles: {
+        Row: {
+          address: string
+          city: string
+          complement: string
+          created_at: string
+          email: string | null
+          full_name: string
+          id: string
+          phone: string
+          state: string
+          updated_at: string
+          user_id: string
+          zip: string
+        }
+        Insert: {
+          address?: string
+          city?: string
+          complement?: string
+          created_at?: string
+          email?: string | null
+          full_name?: string
+          id?: string
+          phone?: string
+          state?: string
+          updated_at?: string
+          user_id: string
+          zip?: string
+        }
+        Update: {
+          address?: string
+          city?: string
+          complement?: string
+          created_at?: string
+          email?: string | null
+          full_name?: string
+          id?: string
+          phone?: string
+          state?: string
+          updated_at?: string
+          user_id?: string
+          zip?: string
+        }
+        Relationships: []
+      }
       favorites: {
         Row: {
           created_at: string
@@ -108,6 +153,101 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      order_items: {
+        Row: {
+          created_at: string
+          discount_percent: number
+          id: string
+          order_id: string
+          product_id: string | null
+          product_name: string
+          quantity: number
+          subtotal: number
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string
+          discount_percent?: number
+          id?: string
+          order_id: string
+          product_id?: string | null
+          product_name: string
+          quantity: number
+          subtotal: number
+          unit_price: number
+        }
+        Update: {
+          created_at?: string
+          discount_percent?: number
+          id?: string
+          order_id?: string
+          product_id?: string | null
+          product_name?: string
+          quantity?: number
+          subtotal?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      orders: {
+        Row: {
+          created_at: string
+          customer_address: string
+          customer_city: string | null
+          customer_complement: string | null
+          customer_name: string
+          customer_phone: string
+          customer_state: string | null
+          customer_zip: string | null
+          id: string
+          notes: string | null
+          status: string
+          total: number
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          customer_address: string
+          customer_city?: string | null
+          customer_complement?: string | null
+          customer_name: string
+          customer_phone: string
+          customer_state?: string | null
+          customer_zip?: string | null
+          id?: string
+          notes?: string | null
+          status?: string
+          total?: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          customer_address?: string
+          customer_city?: string | null
+          customer_complement?: string | null
+          customer_name?: string
+          customer_phone?: string
+          customer_state?: string | null
+          customer_zip?: string | null
+          id?: string
+          notes?: string | null
+          status?: string
+          total?: number
+          updated_at?: string
+          user_id?: string | null
+        }
+        Relationships: []
       }
       products: {
         Row: {
@@ -164,6 +304,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      search_history: {
+        Row: {
+          created_at: string
+          id: string
+          results_count: number
+          term: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          results_count?: number
+          term: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          results_count?: number
+          term?: string
+          user_id?: string | null
+        }
+        Relationships: []
       }
       security_logs: {
         Row: {
