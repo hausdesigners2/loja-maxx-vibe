@@ -60,8 +60,7 @@ export default function AccountPage() {
     setSaving(false);
     if (error) return toast.error(error.message);
     toast.success("Dados salvos com sucesso!");
-    setSaved(true);
-    setTimeout(() => navigate("/"), 1500);
+    setEditing(false);
   };
 
   if (!user) {
