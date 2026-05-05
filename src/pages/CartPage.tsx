@@ -46,8 +46,9 @@ export default function CartPage() {
     try {
       await createOrder(items, customer, user?.id ?? null);
       if (user) {
+        const { payment_method: _pm, ...profileData } = customer;
         await supabase.from("customer_profiles").upsert(
-          { user_id: user.id, email: user.email, ...customer },
+          { user_id: user.id, email: user.email, ...profileData },
           { onConflict: "user_id" },
         );
       }
