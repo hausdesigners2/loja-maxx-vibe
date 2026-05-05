@@ -93,14 +93,18 @@ export default function AccountPage() {
           </div>
         </div>
 
-        {saved ? (
-          <div className="rounded-2xl bg-card p-6 text-center space-y-3">
-            <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-primary/10">
-              <Save className="h-7 w-7 text-primary" />
+        {!editing ? (
+          <div className="rounded-2xl bg-card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold">Meus dados</h2>
+              <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
+                <Pencil className="mr-1 h-3 w-3" /> Editar dados
+              </Button>
             </div>
-            <h2 className="text-base font-bold">Dados salvos com sucesso!</h2>
-            <p className="text-xs text-muted-foreground">Redirecionando para a página inicial...</p>
-            <Button asChild className="gradient-primary"><Link to="/">Ir para o início</Link></Button>
+            <div className="space-y-1 text-sm">
+              <p><span className="text-muted-foreground">Nome:</span> <span className="font-medium">{profile.full_name || "—"}</span></p>
+              <p><span className="text-muted-foreground">Telefone:</span> <span className="font-medium">{profile.phone || "—"}</span></p>
+            </div>
           </div>
         ) : (
         <div className="rounded-2xl bg-card p-4 space-y-3">
@@ -114,9 +118,12 @@ export default function AccountPage() {
             <Field label="UF" v={profile.state} on={(v) => setProfile({ ...profile, state: v })} />
           </div>
           <Field label="CEP" v={profile.zip} on={(v) => setProfile({ ...profile, zip: v })} />
-          <Button onClick={save} disabled={saving} className="w-full gradient-primary">
-            <Save className="mr-2 h-4 w-4" /> {saving ? "Salvando..." : "Salvar dados"}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setEditing(false)} className="flex-1">Cancelar</Button>
+            <Button onClick={save} disabled={saving} className="flex-1 gradient-primary">
+              <Save className="mr-2 h-4 w-4" /> {saving ? "Salvando..." : "Salvar"}
+            </Button>
+          </div>
         </div>
         )}
 
