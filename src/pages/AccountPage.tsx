@@ -24,9 +24,11 @@ const empty: Profile = { full_name: "", phone: "", address: "", complement: "", 
 
 export default function AccountPage() {
   const { user, isAdmin, signOut } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile>(empty);
   const [orders, setOrders] = useState<{ id: string; created_at: string; total: number; status: string }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (!user) return;
