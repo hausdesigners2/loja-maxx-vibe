@@ -15,8 +15,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 const emptyCustomer: CustomerInfo = {
-  full_name: "", phone: "", address: "", complement: "", city: "", state: "", zip: "",
+  full_name: "", phone: "", address: "", complement: "", city: "", state: "", zip: "", payment_method: "Pix",
 };
+
+const PAYMENT_METHODS = ["Pix", "Débito", "Crédito", "Dinheiro"] as const;
 
 export default function CartPage() {
   const { items, setQty, remove, clear } = useCart();
