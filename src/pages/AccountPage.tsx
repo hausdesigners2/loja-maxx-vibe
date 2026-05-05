@@ -58,7 +58,9 @@ export default function AccountPage() {
       .upsert({ user_id: user.id, email: user.email, ...profile }, { onConflict: "user_id" });
     setSaving(false);
     if (error) return toast.error(error.message);
-    toast.success("Dados salvos!");
+    toast.success("Dados salvos com sucesso!");
+    setSaved(true);
+    setTimeout(() => navigate("/"), 1500);
   };
 
   if (!user) {
