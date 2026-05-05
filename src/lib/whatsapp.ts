@@ -12,6 +12,7 @@ export interface CustomerInfo {
   city?: string;
   state?: string;
   zip?: string;
+  payment_method?: string;
 }
 
 export function buildWhatsAppOrder(items: CartItem[], customer?: CustomerInfo): string {
