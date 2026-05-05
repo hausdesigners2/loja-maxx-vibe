@@ -29,6 +29,7 @@ export default function AccountPage() {
   const [orders, setOrders] = useState<{ id: string; created_at: string; total: number; status: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     if (!user) return;
