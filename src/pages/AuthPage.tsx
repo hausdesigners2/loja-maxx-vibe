@@ -1,20 +1,23 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronLeft, ShoppingBag } from "lucide-react";
+import { ChevronLeft, ShoppingBag, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "sonner";
 import { authSchema, friendlyAuthError } from "@/lib/security";
 
 export default function AuthPage() {
   const { signIn, signUp } = useAuth();
   const nav = useNavigate();
+  const [tab, setTab] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [signupDone, setSignupDone] = useState<string | null>(null);
 
   const handle = async (mode: "in" | "up") => {
     const parsed = authSchema.safeParse({ email, password });
@@ -28,8 +31,19 @@ export default function AuthPage() {
       : await signUp(parsed.data.email, parsed.data.password);
     setLoading(false);
     if (error) { toast.error(friendlyAuthError(error)); return; }
-    toast.success(mode === "in" ? "Bem-vindo!" : "Conta criada! Verifique seu email.");
-    nav("/conta");
+
+    if (mode === "in") {
+      toast.success("Bem-vindo!");
+      nav("/conta");
+    } else {
+      // Cadastro concluído: limpar form, mostrar confirmação e voltar para aba de login
+      const usedEmail = parsed.data.email;
+      toast.success("Conta criada com sucesso!");
+      setEmail("");
+      setPassword("");
+      setSignupDone(usedEmail);
+      setTab("in");
+    }
   };
 
   return (
@@ -47,7 +61,18 @@ export default function AuthPage() {
           <p className="text-sm text-muted-foreground">Entre ou crie sua conta</p>
         </div>
 
-        <Tabs defaultValue="in" className="mt-8">
+        {signupDone && (
+          <Alert className="mt-6 border-primary/40 bg-primary/5">
+            <CheckCircle2 className="h-4 w-4 text-primary" />
+            <AlertTitle>Cadastro concluído!</AlertTitle>
+            <AlertDescription className="text-xs">
+              Enviamos um email de confirmação para <strong>{signupDone}</strong>.
+              Confirme seu email e faça login abaixo para continuar.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <Tabs value={tab} onValueChange={(v) => { setTab(v as "in" | "up"); setSignupDone(null); }} className="mt-6">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="in">Entrar</TabsTrigger>
             <TabsTrigger value="up">Criar conta</TabsTrigger>
