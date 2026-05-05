@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { LogOut, Shield, User as UserIcon, Heart, ShoppingBag, Save, Package } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
@@ -24,9 +24,11 @@ const empty: Profile = { full_name: "", phone: "", address: "", complement: "", 
 
 export default function AccountPage() {
   const { user, isAdmin, signOut } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile>(empty);
   const [orders, setOrders] = useState<{ id: string; created_at: string; total: number; status: string }[]>([]);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -56,7 +58,9 @@ export default function AccountPage() {
       .upsert({ user_id: user.id, email: user.email, ...profile }, { onConflict: "user_id" });
     setSaving(false);
     if (error) return toast.error(error.message);
-    toast.success("Dados salvos!");
+    toast.success("Dados salvos com sucesso!");
+    setSaved(true);
+    setTimeout(() => navigate("/"), 1500);
   };
 
   if (!user) {
@@ -89,6 +93,16 @@ export default function AccountPage() {
           </div>
         </div>
 
+        {saved ? (
+          <div className="rounded-2xl bg-card p-6 text-center space-y-3">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-primary/10">
+              <Save className="h-7 w-7 text-primary" />
+            </div>
+            <h2 className="text-base font-bold">Dados salvos com sucesso!</h2>
+            <p className="text-xs text-muted-foreground">Redirecionando para a página inicial...</p>
+            <Button asChild className="gradient-primary"><Link to="/">Ir para o início</Link></Button>
+          </div>
+        ) : (
         <div className="rounded-2xl bg-card p-4 space-y-3">
           <h2 className="text-sm font-bold">Meus dados</h2>
           <Field label="Nome completo" v={profile.full_name} on={(v) => setProfile({ ...profile, full_name: v })} />
@@ -104,6 +118,7 @@ export default function AccountPage() {
             <Save className="mr-2 h-4 w-4" /> {saving ? "Salvando..." : "Salvar dados"}
           </Button>
         </div>
+        )}
 
         {orders.length > 0 && (
           <div className="rounded-2xl bg-card p-4 space-y-2">

@@ -15,8 +15,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 const emptyCustomer: CustomerInfo = {
-  full_name: "", phone: "", address: "", complement: "", city: "", state: "", zip: "",
+  full_name: "", phone: "", address: "", complement: "", city: "", state: "", zip: "", payment_method: "Pix",
 };
+
+const PAYMENT_METHODS = ["Pix", "Débito", "Crédito", "Dinheiro"] as const;
 
 export default function CartPage() {
   const { items, setQty, remove, clear } = useCart();
@@ -46,8 +48,9 @@ export default function CartPage() {
     try {
       await createOrder(items, customer, user?.id ?? null);
       if (user) {
+        const { payment_method: _pm, ...profileData } = customer;
         await supabase.from("customer_profiles").upsert(
-          { user_id: user.id, email: user.email, ...customer },
+          { user_id: user.id, email: user.email, ...profileData },
           { onConflict: "user_id" },
         );
       }
@@ -132,6 +135,25 @@ export default function CartPage() {
             <F label="UF" v={customer.state ?? ""} on={(v) => setCustomer({ ...customer, state: v })} />
           </div>
           <F label="CEP" v={customer.zip ?? ""} on={(v) => setCustomer({ ...customer, zip: v })} />
+          <div>
+            <Label className="text-xs">Forma de pagamento *</Label>
+            <div className="mt-1 grid grid-cols-2 gap-2">
+              {PAYMENT_METHODS.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setCustomer({ ...customer, payment_method: m })}
+                  className={`h-10 rounded-lg border text-sm font-semibold transition ${
+                    customer.payment_method === m
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border bg-background"
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="sticky bottom-20 space-y-3 rounded-2xl bg-card p-4 shadow-card">
