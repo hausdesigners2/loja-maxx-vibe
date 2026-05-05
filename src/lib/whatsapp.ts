@@ -34,6 +34,7 @@ export function buildWhatsAppOrder(items: CartItem[], customer?: CustomerInfo): 
         ? `\n*🏙️ Cidade:* ${[customer.city, customer.state].filter(Boolean).join(" / ")}`
         : "") +
       (customer.zip ? `\n*CEP:* ${customer.zip}` : "") +
+      (customer.payment_method ? `\n*💳 Pagamento:* ${customer.payment_method}` : "") +
       `\n`
     : "";
 
