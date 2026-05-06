@@ -1,63 +1,56 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { Minus, Plus, Trash2, ShoppingBag } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Minus, Plus, Trash2, ShoppingBag, UserIcon, Pencil } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { formatBRL, finalPrice } from "@/lib/format";
 import { buildWhatsAppOrder, CustomerInfo } from "@/lib/whatsapp";
 import { createOrder } from "@/lib/checkout";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
-const emptyCustomer: CustomerInfo = {
-  full_name: "", phone: "", address: "", complement: "", city: "", state: "", zip: "", payment_method: "Pix",
-};
-
 const PAYMENT_METHODS = ["Pix", "Débito", "Crédito", "Dinheiro"] as const;
 
 export default function CartPage() {
   const { items, setQty, remove, clear } = useCart();
-  const { user } = useAuth();
-  const [customer, setCustomer] = useState<CustomerInfo>(emptyCustomer);
+  const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
+  const [profile, setProfile] = useState<CustomerInfo | null>(null);
+  const [loadingProfile, setLoadingProfile] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<string>("Pix");
   const [submitting, setSubmitting] = useState(false);
   const total = items.reduce((s, it) => s + finalPrice(it.price, it.discount_percent) * it.quantity, 0);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) { setProfile(null); return; }
+    setLoadingProfile(true);
     (async () => {
       const { data } = await supabase
         .from("customer_profiles")
         .select("full_name, phone, address, complement, city, state, zip")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (data) setCustomer({ ...emptyCustomer, ...data });
+      setProfile(data ?? null);
+      setLoadingProfile(false);
     })();
   }, [user]);
 
+  const profileComplete = !!(profile?.full_name?.trim() && profile?.phone?.trim() && profile?.address?.trim());
+
   const checkout = async () => {
-    if (!customer.full_name.trim() || !customer.phone.trim() || !customer.address.trim()) {
-      toast.error("Preencha nome, telefone e endereço.");
-      return;
-    }
+    if (!user || !profile || !profileComplete) return;
     setSubmitting(true);
     try {
-      await createOrder(items, customer, user?.id ?? null);
-      if (user) {
-        const { payment_method: _pm, ...profileData } = customer;
-        await supabase.from("customer_profiles").upsert(
-          { user_id: user.id, email: user.email, ...profileData },
-          { onConflict: "user_id" },
-        );
-      }
+      const customer: CustomerInfo = { ...profile, payment_method: paymentMethod };
+      await createOrder(items, customer, user.id);
       const url = buildWhatsAppOrder(items, customer);
       clear();
       window.open(url, "_blank", "noopener,noreferrer");
       toast.success("Pedido registrado! Abrindo WhatsApp...");
+      navigate("/");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Falha ao registrar pedido";
       toast.error(msg);
@@ -121,30 +114,64 @@ export default function CartPage() {
 
         <button onClick={clear} className="text-xs text-muted-foreground underline">Esvaziar carrinho</button>
 
-        <div className="rounded-2xl bg-card p-4 space-y-3">
-          <h2 className="text-sm font-bold">Dados para entrega</h2>
-          <F label="Nome completo *" v={customer.full_name} on={(v) => setCustomer({ ...customer, full_name: v })} />
-          <F label="Telefone (WhatsApp) *" v={customer.phone} on={(v) => setCustomer({ ...customer, phone: v })} placeholder="(11) 99999-9999" />
-          <div>
-            <Label className="text-xs">Endereço *</Label>
-            <Textarea rows={2} value={customer.address} onChange={(e) => setCustomer({ ...customer, address: e.target.value })} placeholder="Rua, número, bairro" />
+        {/* Auth gate */}
+        {!authLoading && !user && (
+          <div className="rounded-2xl bg-card p-5 text-center space-y-3">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-secondary">
+              <UserIcon className="h-7 w-7 text-muted-foreground" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold">Entre para finalizar o pedido</h2>
+              <p className="text-xs text-muted-foreground">Você precisa estar cadastrado para finalizar a compra.</p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button asChild className="gradient-primary"><Link to="/auth">Entrar / Criar conta</Link></Button>
+            </div>
           </div>
-          <F label="Complemento" v={customer.complement ?? ""} on={(v) => setCustomer({ ...customer, complement: v })} />
-          <div className="grid grid-cols-2 gap-2">
-            <F label="Cidade" v={customer.city ?? ""} on={(v) => setCustomer({ ...customer, city: v })} />
-            <F label="UF" v={customer.state ?? ""} on={(v) => setCustomer({ ...customer, state: v })} />
+        )}
+
+        {/* Profile summary */}
+        {user && !loadingProfile && (
+          <div className="rounded-2xl bg-card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold">Dados de entrega</h2>
+              <Button asChild size="sm" variant="outline">
+                <Link to="/conta"><Pencil className="mr-1 h-3 w-3" /> Editar</Link>
+              </Button>
+            </div>
+            {profileComplete ? (
+              <div className="space-y-1 text-sm">
+                <p><span className="text-muted-foreground">Nome:</span> <span className="font-medium">{profile!.full_name}</span></p>
+                <p><span className="text-muted-foreground">Telefone:</span> <span className="font-medium">{profile!.phone}</span></p>
+                <p><span className="text-muted-foreground">Endereço:</span> <span className="font-medium">{profile!.address}{profile!.complement ? ` — ${profile!.complement}` : ""}</span></p>
+                {(profile!.city || profile!.state) && (
+                  <p><span className="text-muted-foreground">Cidade:</span> <span className="font-medium">{[profile!.city, profile!.state].filter(Boolean).join(" / ")}</span></p>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-lg bg-secondary p-3 text-xs">
+                <p className="font-semibold">Complete seus dados para finalizar.</p>
+                <p className="text-muted-foreground mt-1">Precisamos de nome, telefone e endereço.</p>
+                <Button asChild size="sm" className="mt-2 gradient-primary">
+                  <Link to="/conta">Completar cadastro</Link>
+                </Button>
+              </div>
+            )}
           </div>
-          <F label="CEP" v={customer.zip ?? ""} on={(v) => setCustomer({ ...customer, zip: v })} />
-          <div>
-            <Label className="text-xs">Forma de pagamento *</Label>
-            <div className="mt-1 grid grid-cols-2 gap-2">
+        )}
+
+        {/* Payment method */}
+        {user && profileComplete && (
+          <div className="rounded-2xl bg-card p-4 space-y-2">
+            <Label className="text-sm font-bold">Forma de pagamento</Label>
+            <div className="grid grid-cols-2 gap-2">
               {PAYMENT_METHODS.map((m) => (
                 <button
                   key={m}
                   type="button"
-                  onClick={() => setCustomer({ ...customer, payment_method: m })}
+                  onClick={() => setPaymentMethod(m)}
                   className={`h-10 rounded-lg border text-sm font-semibold transition ${
-                    customer.payment_method === m
+                    paymentMethod === m
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border bg-background"
                   }`}
@@ -154,16 +181,27 @@ export default function CartPage() {
               ))}
             </div>
           </div>
-        </div>
+        )}
 
         <div className="sticky bottom-20 space-y-3 rounded-2xl bg-card p-4 shadow-card">
           <div className="flex items-baseline justify-between">
             <span className="text-sm text-muted-foreground">Total</span>
             <span className="text-2xl font-extrabold text-primary">{formatBRL(total)}</span>
           </div>
-          <Button size="lg" onClick={checkout} disabled={submitting} className="h-14 w-full gradient-primary text-base font-bold shadow-glow">
-            {submitting ? "Processando..." : "Finalizar pelo WhatsApp"}
-          </Button>
+          {user ? (
+            <Button
+              size="lg"
+              onClick={checkout}
+              disabled={submitting || !profileComplete}
+              className="h-14 w-full gradient-primary text-base font-bold shadow-glow"
+            >
+              {submitting ? "Processando..." : "Finalizar pelo WhatsApp"}
+            </Button>
+          ) : (
+            <Button asChild size="lg" className="h-14 w-full gradient-primary text-base font-bold shadow-glow">
+              <Link to="/auth">Entrar para finalizar</Link>
+            </Button>
+          )}
           <Button asChild size="lg" variant="outline" className="h-12 w-full text-sm font-semibold">
             <Link to="/">Continuar comprando</Link>
           </Button>
@@ -171,14 +209,5 @@ export default function CartPage() {
         </div>
       </div>
     </AppShell>
-  );
-}
-
-function F({ label, v, on, placeholder }: { label: string; v: string; on: (v: string) => void; placeholder?: string }) {
-  return (
-    <div>
-      <Label className="text-xs">{label}</Label>
-      <Input value={v} onChange={(e) => on(e.target.value)} placeholder={placeholder} className="h-10" />
-    </div>
   );
 }
