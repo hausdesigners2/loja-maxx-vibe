@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { ChevronLeft, Pencil, Plus, Trash2, Upload } from "lucide-react";
+import { ArrowDownAZ, ArrowUpAZ, ChevronLeft, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { useAuth } from "@/contexts/AuthContext";
@@ -46,6 +46,17 @@ export default function AdminPage() {
   const [form, setForm] = useState<FormState>(empty);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [sortAsc, setSortAsc] = useState(true);
+
+  const visibleProducts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const filtered = q ? products.filter((p) => p.name.toLowerCase().includes(q)) : products;
+    return [...filtered].sort((a, b) => {
+      const cmp = a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" });
+      return sortAsc ? cmp : -cmp;
+    });
+  }, [products, search, sortAsc]);
 
   const reload = async () => {
     const [{ data: p }, { data: c }] = await Promise.all([
@@ -134,30 +145,56 @@ export default function AdminPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-          <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-            <ChevronLeft className="h-4 w-4" /> Loja
-          </Link>
-          <h1 className="text-base font-bold">Painel Admin</h1>
-          <div className="flex items-center gap-2">
-            <Button asChild size="sm" variant="outline">
-              <Link to="/admin/dashboard">Pedidos</Link>
-            </Button>
-            <Button asChild size="sm" variant="outline">
-              <Link to="/admin/banners">Banners</Link>
-            </Button>
+      <header className="border-b border-border bg-background">
+        <div className="mx-auto max-w-3xl px-4 pt-4 pb-2">
+          <div className="flex items-start justify-between">
+            <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+              <ChevronLeft className="h-4 w-4" /> Loja
+            </Link>
             <Button size="sm" className="gradient-primary" onClick={openNew}>
               <Plus className="mr-1 h-4 w-4" /> Novo
             </Button>
+          </div>
+          <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Painel Administrativo</h1>
+          <div className="mt-3 flex gap-6 border-b border-border">
+            <Link to="/admin/dashboard" className="pb-2 text-sm font-medium text-muted-foreground">
+              Pedidos
+            </Link>
+            <span className="-mb-px border-b-2 border-primary pb-2 text-sm font-bold text-foreground">
+              Produtos
+            </span>
+            <Link to="/admin/banners" className="pb-2 text-sm font-medium text-muted-foreground">
+              Banners
+            </Link>
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-3xl space-y-3 px-4 py-4">
-        <p className="text-sm text-muted-foreground">{products.length} produto(s) cadastrado(s)</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">{visibleProducts.length} produto(s) cadastrado(s)</p>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setSortAsc((v) => !v)}
+            title={sortAsc ? "Ordem A → Z" : "Ordem Z → A"}
+          >
+            {sortAsc ? <ArrowDownAZ className="mr-1 h-4 w-4" /> : <ArrowUpAZ className="mr-1 h-4 w-4" />}
+            {sortAsc ? "A → Z" : "Z → A"}
+          </Button>
+        </div>
 
-        {products.map((p) => {
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar produtos cadastrados..."
+            className="pl-9"
+          />
+        </div>
+
+        {visibleProducts.map((p) => {
           const cat = categories.find((c) => c.id === p.category_id);
           return (
             <div key={p.id} className="flex gap-3 rounded-2xl bg-card p-3">
@@ -186,9 +223,9 @@ export default function AdminPage() {
           );
         })}
 
-        {products.length === 0 && (
+        {visibleProducts.length === 0 && (
           <div className="rounded-2xl bg-card p-8 text-center text-sm text-muted-foreground">
-            Nenhum produto. Clique em "Novo" para cadastrar o primeiro.
+            {products.length === 0 ? 'Nenhum produto. Clique em "Novo" para cadastrar o primeiro.' : "Nenhum produto encontrado."}
           </div>
         )}
       </main>
