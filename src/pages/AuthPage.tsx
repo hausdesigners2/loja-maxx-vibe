@@ -111,10 +111,6 @@ export default function AuthPage() {
                 </TabsContent>
               ))}
             </Tabs>
-
-            <p className="mt-6 text-center text-xs text-muted-foreground">
-              Para virar admin, crie a conta e use o painel do banco para adicionar a função "admin".
-            </p>
           </>
         )}
       </div>
