@@ -46,6 +46,17 @@ export default function AdminPage() {
   const [form, setForm] = useState<FormState>(empty);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+  const [sortAsc, setSortAsc] = useState(true);
+
+  const visibleProducts = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const filtered = q ? products.filter((p) => p.name.toLowerCase().includes(q)) : products;
+    return [...filtered].sort((a, b) => {
+      const cmp = a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" });
+      return sortAsc ? cmp : -cmp;
+    });
+  }, [products, search, sortAsc]);
 
   const reload = async () => {
     const [{ data: p }, { data: c }] = await Promise.all([
