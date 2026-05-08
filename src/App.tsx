@@ -14,6 +14,7 @@ import FavoritesPage from "./pages/FavoritesPage";
 import SearchPage from "./pages/SearchPage";
 import AccountPage from "./pages/AccountPage";
 import AuthPage from "./pages/AuthPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import AdminPage from "./pages/AdminPage";
 import AdminBannersPage from "./pages/AdminBannersPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
@@ -37,6 +38,7 @@ const App = () => (
               <Route path="/buscar" element={<SearchPage />} />
               <Route path="/conta" element={<AccountPage />} />
               <Route path="/auth" element={<AuthPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/admin/banners" element={<AdminBannersPage />} />
               <Route path="/admin/dashboard" element={<AdminDashboardPage />} />

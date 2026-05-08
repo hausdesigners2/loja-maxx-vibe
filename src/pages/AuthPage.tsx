@@ -1,14 +1,22 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronLeft, ShoppingBag, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, ShoppingBag, CheckCircle2, Eye, EyeOff, KeyRound } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { authSchema, friendlyAuthError } from "@/lib/security";
+import { authSchema, emailSchema, friendlyAuthError } from "@/lib/security";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function AuthPage() {
   const { signIn, signUp } = useAuth();
@@ -16,8 +24,13 @@ export default function AuthPage() {
   const [tab, setTab] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [signupDone, setSignupDone] = useState<string | null>(null);
+
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const handle = async (mode: "in" | "up") => {
     const parsed = authSchema.safeParse({ email, password });
@@ -36,7 +49,6 @@ export default function AuthPage() {
       toast.success("Bem-vindo!");
       nav("/conta");
     } else {
-      // Cadastro concluído: limpar form, mostrar confirmação e voltar para aba de login
       const usedEmail = parsed.data.email;
       toast.success("Conta criada com sucesso!");
       setEmail("");
@@ -44,6 +56,23 @@ export default function AuthPage() {
       setSignupDone(usedEmail);
       setTab("in");
     }
+  };
+
+  const handleForgot = async () => {
+    const parsed = emailSchema.safeParse(forgotEmail);
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? "Email inválido.");
+      return;
+    }
+    setForgotLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    setForgotLoading(false);
+    if (error) { toast.error(friendlyAuthError(error.message)); return; }
+    toast.success("Enviamos um link de redefinição para seu email.");
+    setForgotOpen(false);
+    setForgotEmail("");
   };
 
   return (
@@ -88,7 +117,7 @@ export default function AuthPage() {
           </div>
         ) : (
           <>
-            <Tabs value={tab} onValueChange={(v) => setTab(v as "in" | "up")} className="mt-6">
+            <Tabs value={tab} onValueChange={(v) => { setTab(v as "in" | "up"); setShowPass(false); }} className="mt-6">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="in">Entrar</TabsTrigger>
                 <TabsTrigger value="up">Criar conta</TabsTrigger>
@@ -102,18 +131,83 @@ export default function AuthPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor={`${mode}-pass`}>Senha</Label>
-                    <Input id={`${mode}-pass`} type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="h-12" />
+                    <div className="relative">
+                      <Input
+                        id={`${mode}-pass`}
+                        type={showPass ? "text" : "password"}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="h-12 pr-12"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPass((v) => !v)}
+                        aria-label={showPass ? "Ocultar senha" : "Mostrar senha"}
+                        className="absolute inset-y-0 right-0 grid w-12 place-items-center text-muted-foreground transition-colors hover:text-foreground active:scale-95"
+                      >
+                        {showPass ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                      </button>
+                    </div>
                   </div>
-                  <Button onClick={() => handle(mode)} disabled={loading}
-                    className="h-12 w-full gradient-primary text-base font-bold shadow-glow">
+                  <Button
+                    onClick={() => handle(mode)}
+                    disabled={loading}
+                    className="h-12 w-full gradient-primary text-base font-bold shadow-glow transition-transform active:scale-[0.98]"
+                  >
                     {loading ? "Aguarde..." : mode === "in" ? "Entrar" : "Criar conta"}
                   </Button>
+
+                  {mode === "in" && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => { setForgotEmail(email); setForgotOpen(true); }}
+                      className="h-12 w-full rounded-xl border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary transition-transform active:scale-[0.98]"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                      Esqueci minha senha
+                    </Button>
+                  )}
                 </TabsContent>
               ))}
             </Tabs>
           </>
         )}
       </div>
+
+      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Recuperar senha</DialogTitle>
+            <DialogDescription>
+              Informe seu email cadastrado. Enviaremos um link para você criar uma nova senha.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 pt-2">
+            <Label htmlFor="forgot-email">Email</Label>
+            <Input
+              id="forgot-email"
+              type="email"
+              value={forgotEmail}
+              onChange={(e) => setForgotEmail(e.target.value)}
+              className="h-12"
+              placeholder="seu@email.com"
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" onClick={() => setForgotOpen(false)} className="h-12">
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleForgot}
+              disabled={forgotLoading}
+              className="h-12 gradient-primary font-bold shadow-glow"
+            >
+              {forgotLoading ? "Enviando..." : "Enviar link"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
