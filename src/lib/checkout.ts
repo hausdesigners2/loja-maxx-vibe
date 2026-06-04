@@ -7,11 +7,17 @@ export async function createOrder(
   items: CartItem[],
   customer: CustomerInfo,
   userId: string | null,
+  extras?: { change_for?: number | null; notes?: string | null },
 ) {
   const total = items.reduce(
     (s, it) => s + finalPrice(it.price, it.discount_percent) * it.quantity,
     0,
   );
+
+  const method = customer.payment_method || "Pix";
+  // Cartão débito/crédito = "À receber na maquininha" => status awaiting_machine
+  const initialStatus =
+    method === "Débito" || method === "Crédito" ? "awaiting_machine" : "pending";
 
   const { data: order, error } = await supabase
     .from("orders")
@@ -25,6 +31,10 @@ export async function createOrder(
       customer_state: customer.state || null,
       customer_zip: customer.zip || null,
       total,
+      payment_method: method,
+      change_for: extras?.change_for ?? null,
+      notes: extras?.notes ?? null,
+      status: initialStatus,
     })
     .select()
     .single();
