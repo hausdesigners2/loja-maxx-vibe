@@ -200,6 +200,7 @@ export type Database = {
       }
       orders: {
         Row: {
+          change_for: number | null
           created_at: string
           customer_address: string
           customer_city: string | null
@@ -210,12 +211,15 @@ export type Database = {
           customer_zip: string | null
           id: string
           notes: string | null
+          order_number: number
+          payment_method: string
           status: string
           total: number
           updated_at: string
           user_id: string | null
         }
         Insert: {
+          change_for?: number | null
           created_at?: string
           customer_address: string
           customer_city?: string | null
@@ -226,12 +230,15 @@ export type Database = {
           customer_zip?: string | null
           id?: string
           notes?: string | null
+          order_number?: number
+          payment_method?: string
           status?: string
           total?: number
           updated_at?: string
           user_id?: string | null
         }
         Update: {
+          change_for?: number | null
           created_at?: string
           customer_address?: string
           customer_city?: string | null
@@ -242,6 +249,8 @@ export type Database = {
           customer_zip?: string | null
           id?: string
           notes?: string | null
+          order_number?: number
+          payment_method?: string
           status?: string
           total?: number
           updated_at?: string
