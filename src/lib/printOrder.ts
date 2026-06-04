@@ -1,5 +1,6 @@
 import { formatBRL } from "./format";
 import type { OrderRow } from "@/pages/AdminDashboardPage";
+export type { OrderRow };
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pendente",
