@@ -188,6 +188,29 @@ export default function CartPage() {
                 </button>
               ))}
             </div>
+            {paymentMethod === "Dinheiro" && (
+              <div className="pt-2">
+                <Label className="text-xs text-muted-foreground">Troco para (opcional)</Label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={changeFor}
+                  onChange={(e) => setChangeFor(e.target.value)}
+                  placeholder="Ex: 50,00"
+                  className="mt-1 h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                />
+              </div>
+            )}
+            <div className="pt-2">
+              <Label className="text-xs text-muted-foreground">Observações (opcional)</Label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                placeholder="Ex: sem cebola, entregar à tarde..."
+                className="mt-1 w-full rounded-lg border border-border bg-background p-2 text-sm"
+              />
+            </div>
           </div>
         )}
 
