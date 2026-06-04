@@ -21,6 +21,8 @@ export default function CartPage() {
   const [profile, setProfile] = useState<CustomerInfo | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<string>("Pix");
+  const [changeFor, setChangeFor] = useState<string>("");
+  const [notes, setNotes] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const total = items.reduce((s, it) => s + finalPrice(it.price, it.discount_percent) * it.quantity, 0);
 
@@ -45,7 +47,13 @@ export default function CartPage() {
     setSubmitting(true);
     try {
       const customer: CustomerInfo = { ...profile, payment_method: paymentMethod };
-      await createOrder(items, customer, user.id);
+      const changeNum = paymentMethod === "Dinheiro" && changeFor.trim()
+        ? Number(changeFor.replace(",", "."))
+        : null;
+      await createOrder(items, customer, user.id, {
+        change_for: changeNum && !Number.isNaN(changeNum) ? changeNum : null,
+        notes: notes.trim() || null,
+      });
       const url = buildWhatsAppOrder(items, customer);
       clear();
       window.open(url, "_blank", "noopener,noreferrer");
