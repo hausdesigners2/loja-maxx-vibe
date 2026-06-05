@@ -287,19 +287,12 @@ function OrderCard({ order: o, onStatus }: { order: OrderRow; onStatus: (id: str
           </button>
         )}
         <button
-          onClick={() => printOrder(o, "80mm")}
-          disabled={!canPrint}
-          className="ml-auto inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-40"
-          title={canPrint ? "Imprimir pedido" : "Disponível após marcar como Pago"}
-        >
-          <Printer className="h-3 w-3" /> 80mm
-        </button>
-        <button
           onClick={() => printOrder(o, "58mm")}
           disabled={!canPrint}
-          className="inline-flex items-center gap-1 rounded-lg border border-primary px-2.5 py-1.5 text-xs font-semibold text-primary disabled:opacity-40"
+          className="ml-auto inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-40"
+          title={canPrint ? "Imprimir pedido (58mm)" : "Disponível após marcar como Pago"}
         >
-          <Printer className="h-3 w-3" /> 58mm
+          <Printer className="h-3 w-3" /> Imprimir Pedido
         </button>
       </div>
     </div>
