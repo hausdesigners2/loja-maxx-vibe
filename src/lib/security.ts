@@ -23,7 +23,12 @@ export const authSchema = z.object({
 /** Strip control chars, collapse whitespace, hard cap length. */
 export function sanitizeText(input: string, maxLength = 500): string {
   return input
-    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .split("")
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code > 31 && code !== 127;
+    })
+    .join("")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLength);
