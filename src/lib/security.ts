@@ -23,7 +23,12 @@ export const authSchema = z.object({
 /** Strip control chars, collapse whitespace, hard cap length. */
 export function sanitizeText(input: string, maxLength = 500): string {
   return input
-    .replace(/[\u0000-\u001F\u007F]/g, "")
+    .split("")
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code > 31 && code !== 127;
+    })
+    .join("")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLength);
@@ -38,7 +43,30 @@ const errorMap: Record<string, string> = {
   "Password should be at least 6 characters": "A senha é muito curta.",
   "Signup requires a valid password": "Senha inválida.",
   "Email rate limit exceeded": "Muitas tentativas. Tente novamente em alguns minutos.",
+  "Password is known to be weak and easy to guess": "Senha fraca: esta senha é conhecida e fácil de adivinhar. Escolha outra senha.",
 };
+
+export type AuthErrorLike = {
+  message?: string;
+  code?: string;
+  status?: number;
+  name?: string;
+  weak_password?: { reasons?: string[] };
+};
+
+export function formatAuthError(error: AuthErrorLike | string | null | undefined): string {
+  if (!error) return "Algo deu errado. Tente novamente.";
+  if (typeof error === "string") return error;
+
+  const parts = [
+    error.code ? `code: ${error.code}` : null,
+    error.status ? `status: ${error.status}` : null,
+    error.message ? `message: ${error.message}` : null,
+    error.weak_password?.reasons?.length ? `weak_password.reasons: ${error.weak_password.reasons.join(", ")}` : null,
+  ].filter(Boolean);
+
+  return parts.length ? parts.join(" | ") : JSON.stringify(error);
+}
 
 export function friendlyAuthError(message: string | null | undefined): string {
   if (!message) return "Algo deu errado. Tente novamente.";
