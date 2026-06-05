@@ -1,15 +1,15 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
-import { Session, User } from "@supabase/supabase-js";
+import { AuthError, Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
-import { logSecurityEvent } from "@/lib/security";
+import { formatAuthError, logSecurityEvent } from "@/lib/security";
 
 interface AuthContextValue {
   user: User | null;
   session: Session | null;
   isAdmin: boolean;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string) => Promise<{ error: string | null }>;
+  signIn: (email: string, password: string) => Promise<{ error: string | null; errorDetails?: AuthError | null }>;
+  signUp: (email: string, password: string) => Promise<{ error: string | null; errorDetails?: AuthError | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -111,11 +111,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      void logSecurityEvent("login_failed", { email, metadata: { reason: error.message } });
+      console.error("Lovable Cloud auth login error:", error);
+      void logSecurityEvent("login_failed", { email, metadata: { reason: error.message, details: formatAuthError(error) } });
     } else {
       void logSecurityEvent("login_success", { email, userId: data.user?.id });
     }
-    return { error: error?.message ?? null };
+    return { error: error ? formatAuthError(error) : null, errorDetails: error };
   };
 
   const signUp = async (email: string, password: string) => {
@@ -125,11 +126,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       options: { emailRedirectTo: `${window.location.origin}/` },
     });
     if (error) {
-      void logSecurityEvent("signup_failed", { email, metadata: { reason: error.message } });
+      console.error("Lovable Cloud auth signup error:", error);
+      void logSecurityEvent("signup_failed", { email, metadata: { reason: error.message, details: formatAuthError(error) } });
     } else {
       void logSecurityEvent("signup_success", { email, userId: data.user?.id });
     }
-    return { error: error?.message ?? null };
+    return { error: error ? formatAuthError(error) : null, errorDetails: error };
   };
 
   const signOut = async () => {

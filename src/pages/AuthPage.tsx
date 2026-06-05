@@ -15,7 +15,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { authSchema, emailSchema, friendlyAuthError } from "@/lib/security";
+import { authSchema, emailSchema, formatAuthError, friendlyAuthError } from "@/lib/security";
 import { supabase } from "@/integrations/supabase/client";
 
 export default function AuthPage() {
@@ -39,11 +39,15 @@ export default function AuthPage() {
       return;
     }
     setLoading(true);
-    const { error } = mode === "in"
+    const { error, errorDetails } = mode === "in"
       ? await signIn(parsed.data.email, parsed.data.password)
       : await signUp(parsed.data.email, parsed.data.password);
     setLoading(false);
-    if (error) { toast.error(friendlyAuthError(error)); return; }
+    if (error) {
+      console.error(`Erro completo no ${mode === "in" ? "login" : "cadastro"}:`, errorDetails ?? error);
+      toast.error(friendlyAuthError(error), { description: formatAuthError(errorDetails ?? error) });
+      return;
+    }
 
     if (mode === "in") {
       toast.success("Bem-vindo!");
@@ -69,7 +73,11 @@ export default function AuthPage() {
       redirectTo: `${window.location.origin}/reset-password`,
     });
     setForgotLoading(false);
-    if (error) { toast.error(friendlyAuthError(error.message)); return; }
+    if (error) {
+      console.error("Lovable Cloud auth password reset error:", error);
+      toast.error(friendlyAuthError(error.message), { description: formatAuthError(error) });
+      return;
+    }
     toast.success("Enviamos um link de redefinição para seu email.");
     setForgotOpen(false);
     setForgotEmail("");
