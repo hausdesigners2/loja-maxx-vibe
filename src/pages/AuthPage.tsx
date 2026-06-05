@@ -33,18 +33,31 @@ export default function AuthPage() {
   const [forgotLoading, setForgotLoading] = useState(false);
 
   const handle = async (mode: "in" | "up") => {
+    console.log(`[AuthPage] handle(${mode}) chamado`, { email, passwordLength: password.length });
     const parsed = authSchema.safeParse({ email, password });
     if (!parsed.success) {
+      console.warn(`[AuthPage] validação falhou:`, parsed.error.issues);
       toast.error(parsed.error.issues[0]?.message ?? "Dados inválidos.");
       return;
     }
+    console.log(`[AuthPage] validação ok, chamando ${mode === "in" ? "signIn" : "signUp"}...`);
     setLoading(true);
-    const { error, errorDetails } = mode === "in"
-      ? await signIn(parsed.data.email, parsed.data.password)
-      : await signUp(parsed.data.email, parsed.data.password);
+    let result;
+    try {
+      result = mode === "in"
+        ? await signIn(parsed.data.email, parsed.data.password)
+        : await signUp(parsed.data.email, parsed.data.password);
+      console.log(`[AuthPage] resposta do ${mode === "in" ? "signIn" : "signUp"}:`, result);
+    } catch (err) {
+      console.error(`[AuthPage] exceção em ${mode}:`, err);
+      setLoading(false);
+      toast.error("Erro inesperado", { description: String((err as Error)?.message ?? err) });
+      return;
+    }
     setLoading(false);
+    const { error, errorDetails } = result;
     if (error) {
-      console.error(`Erro completo no ${mode === "in" ? "login" : "cadastro"}:`, errorDetails ?? error);
+      console.error(`[AuthPage] Erro completo no ${mode === "in" ? "login" : "cadastro"}:`, errorDetails ?? error);
       toast.error(friendlyAuthError(error), { description: formatAuthError(errorDetails ?? error) });
       return;
     }
@@ -54,6 +67,7 @@ export default function AuthPage() {
       nav("/conta");
     } else {
       const usedEmail = parsed.data.email;
+      console.log(`[AuthPage] cadastro concluído com sucesso para`, usedEmail);
       toast.success("Conta criada com sucesso!");
       setEmail("");
       setPassword("");
