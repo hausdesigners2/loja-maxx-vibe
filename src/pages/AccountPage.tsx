@@ -132,7 +132,7 @@ export default function AccountPage() {
               <div key={o.id} className="flex items-center justify-between border-t border-border pt-2 text-xs">
                 <div>
                   <div className="font-semibold">#{o.id.slice(0, 8)}</div>
-                  <div className="text-muted-foreground">{new Date(o.created_at).toLocaleDateString("pt-BR")} · {o.status}</div>
+                  <div className="text-muted-foreground">{new Date(o.created_at).toLocaleDateString("pt-BR")} · {statusLabel(o.status)}</div>
                 </div>
                 <div className="font-bold text-primary">{formatBRL(Number(o.total))}</div>
               </div>
@@ -169,4 +169,19 @@ function Field({ label, v, on, placeholder }: { label: string; v: string; on: (v
       <Input value={v} onChange={(e) => on(e.target.value)} placeholder={placeholder} className="h-10" />
     </div>
   );
+}
+
+function statusLabel(s: string): string {
+  const map: Record<string, string> = {
+    pending: "Pedido recebido",
+    awaiting_machine: "Pedido recebido",
+    received: "Pedido recebido",
+    preparing: "Em preparação",
+    in_preparation: "Em preparação",
+    out_for_delivery: "Saiu para entrega",
+    shipped: "Saiu para entrega",
+    delivered: "Entregue",
+    completed: "Entregue",
+  };
+  return map[s] ?? s;
 }
