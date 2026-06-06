@@ -234,7 +234,7 @@ export default function CartPage() {
           <Button asChild size="lg" variant="outline" className="h-12 w-full text-sm font-semibold">
             <Link to="/">Continuar comprando</Link>
           </Button>
-          <p className="text-center text-[11px] text-muted-foreground">Seu pedido será salvo e enviado via WhatsApp com seus dados.</p>
+          <p className="text-center text-[11px] text-muted-foreground">Seu pedido será enviado para o lojista e ficará disponível em Meus pedidos.</p>
         </div>
       </div>
     </AppShell>
