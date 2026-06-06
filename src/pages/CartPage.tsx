@@ -7,7 +7,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { formatBRL, finalPrice } from "@/lib/format";
-import { buildWhatsAppOrder, CustomerInfo } from "@/lib/whatsapp";
+import { CustomerInfo } from "@/lib/whatsapp";
 import { createOrder } from "@/lib/checkout";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -24,6 +24,7 @@ export default function CartPage() {
   const [changeFor, setChangeFor] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
   const total = items.reduce((s, it) => s + finalPrice(it.price, it.discount_percent) * it.quantity, 0);
 
   useEffect(() => {
@@ -54,15 +55,12 @@ export default function CartPage() {
         change_for: changeNum && !Number.isNaN(changeNum) ? changeNum : null,
         notes: notes.trim() || null,
       });
-      const url = buildWhatsAppOrder(items, customer);
       clear();
-      window.open(url, "_blank", "noopener,noreferrer");
-      toast.success("Pedido registrado! Abrindo WhatsApp...");
-      navigate("/");
+      setSubmitted(true);
+      window.setTimeout(() => navigate("/"), 2000);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Falha ao registrar pedido";
       toast.error(msg);
-    } finally {
       setSubmitting(false);
     }
   };
@@ -223,10 +221,10 @@ export default function CartPage() {
             <Button
               size="lg"
               onClick={checkout}
-              disabled={submitting || !profileComplete}
+              disabled={submitting || submitted || !profileComplete}
               className="h-14 w-full gradient-primary text-base font-bold shadow-glow"
             >
-              {submitting ? "Processando..." : "Finalizar pelo WhatsApp"}
+              {submitted ? "Pedido Enviado com Sucesso!" : submitting ? "Processando..." : "Finalizar e Enviar"}
             </Button>
           ) : (
             <Button asChild size="lg" className="h-14 w-full gradient-primary text-base font-bold shadow-glow">
