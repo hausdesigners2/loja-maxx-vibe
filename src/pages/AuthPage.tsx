@@ -64,7 +64,7 @@ export default function AuthPage() {
 
     if (mode === "in") {
       toast.success("Bem-vindo!");
-      nav("/conta");
+      nav("/", { replace: true });
     } else {
       const usedEmail = parsed.data.email;
       console.log(`[AuthPage] cadastro concluído com sucesso para`, usedEmail);
