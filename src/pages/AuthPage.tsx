@@ -108,7 +108,7 @@ export default function AuthPage() {
           <div className="grid h-14 w-14 place-items-center rounded-2xl gradient-primary shadow-glow">
             <ShoppingBag className="h-7 w-7 text-primary-foreground" />
           </div>
-          <h1 className="text-2xl font-extrabold">Loja Maxx</h1>
+          <h1 className="text-2xl font-extrabold">Lojas Maxx</h1>
           <p className="text-sm text-muted-foreground">Entre ou crie sua conta</p>
         </div>
 

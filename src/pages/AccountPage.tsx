@@ -68,7 +68,7 @@ export default function AccountPage() {
           <div className="grid h-20 w-20 place-items-center rounded-full bg-secondary">
             <UserIcon className="h-10 w-10 text-muted-foreground" />
           </div>
-          <h1 className="text-xl font-bold">Entrar na Loja Maxx</h1>
+          <h1 className="text-xl font-bold">Entrar nas Lojas Maxx</h1>
           <p className="max-w-xs text-sm text-muted-foreground">Faça login ou crie sua conta para aproveitar todas as vantagens!</p>
           <Button asChild className="gradient-primary shadow-glow"><Link to="/auth">Entrar / Criar conta</Link></Button>
         </div>
