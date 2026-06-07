@@ -75,7 +75,7 @@ const Index = () => {
         </section>
 
         <section>
-          <SectionHeader title="🔥 Mais vendidos" to="/buscar">Os queridinhos da Loja Maxx</SectionHeader>
+          <SectionHeader title="🔥 Mais vendidos" to="/buscar">Os queridinhos da Lojas Maxx</SectionHeader>
           {loading ? <SkeletonGrid /> : visibleBestSellers.length > 0 ? (
             <div key={fadeKey} className="grid grid-cols-2 gap-3 animate-fade-in">
               {visibleBestSellers.map((p, i) => <ProductCard key={`${p.id}-${i}`} product={p} />)}

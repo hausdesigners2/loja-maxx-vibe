@@ -2,7 +2,7 @@ import { formatBRL } from "./format";
 import type { OrderRow } from "@/pages/AdminDashboardPage";
 export type { OrderRow };
 
-const STORE_NAME = "LOJA MAXX";
+const STORE_NAME = "LOJAS MAXX";
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pendente",

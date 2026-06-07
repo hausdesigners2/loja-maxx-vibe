@@ -12,7 +12,7 @@ export function TopBar() {
             <ShoppingBag className="h-5 w-5 text-primary-foreground" />
           </div>
           <div className="leading-tight">
-            <h1 className="text-base font-extrabold tracking-tight">Loja Maxx</h1>
+            <h1 className="text-base font-extrabold tracking-tight">Lojas Maxx</h1>
             <p className="text-[10px] text-muted-foreground">Mercado online</p>
           </div>
         </Link>

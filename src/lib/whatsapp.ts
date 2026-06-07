@@ -39,7 +39,7 @@ export function buildWhatsAppOrder(items: CartItem[], customer?: CustomerInfo): 
     : "";
 
   const msg =
-    `*🛒 Novo pedido — Loja Maxx*\n` +
+    `*🛒 Novo pedido — Lojas Maxx*\n` +
     customerBlock +
     `\n*Itens:*\n` +
     lines.join("\n") +
