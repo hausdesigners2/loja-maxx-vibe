@@ -239,7 +239,7 @@ function OrderCard({ order: o, onStatus }: { order: OrderRow; onStatus: (id: str
         </div>
         <div className="text-right">
           <div className="font-extrabold text-primary">{formatBRL(Number(o.total))}</div>
-          <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${STATUS_COLORS[o.status] ?? "bg-secondary text-muted-foreground"}`}>
+          <span className={`mt-1 inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[9px] font-bold uppercase leading-tight ${STATUS_COLORS[o.status] ?? "bg-secondary text-muted-foreground"}`}>
             {STATUS_LABELS[o.status] ?? o.status}
           </span>
         </div>
