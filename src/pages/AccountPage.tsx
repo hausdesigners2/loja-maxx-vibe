@@ -267,18 +267,3 @@ function Field({ label, v, on, placeholder }: { label: string; v: string; on: (v
     </div>
   );
 }
-
-function statusLabel(s: string): string {
-  const map: Record<string, string> = {
-    pending: "Pedido recebido",
-    awaiting_machine: "Pedido recebido",
-    received: "Pedido recebido",
-    preparing: "Em preparação",
-    in_preparation: "Em preparação",
-    out_for_delivery: "Saiu para entrega",
-    shipped: "Saiu para entrega",
-    delivered: "Entregue",
-    completed: "Entregue",
-  };
-  return map[s] ?? s;
-}
