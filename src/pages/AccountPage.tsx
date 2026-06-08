@@ -6,9 +6,31 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { formatBRL } from "@/lib/format";
+import { formatBRL, finalPrice } from "@/lib/format";
+
+interface OrderRow { id: string; created_at: string; total: number; status: string; order_number?: number | null }
+interface OrderItem { id: string; product_name: string; quantity: number; unit_price: number; discount_percent: number; subtotal: number }
+interface OrderFull extends OrderRow {
+  customer_name: string | null; customer_phone: string | null;
+  customer_address: string | null; customer_complement: string | null;
+  customer_city: string | null; customer_state: string | null; customer_zip: string | null;
+  payment_method: string | null; change_for: number | null;
+}
+
+const paymentLabel = (m: string | null) => {
+  const map: Record<string, string> = {
+    cash: "Dinheiro", pix: "Pix", debit: "Débito", credit: "Crédito",
+    machine: "Maquininha", awaiting_machine: "Aguardando maquininha",
+    machine_on_delivery: "À receber na maquininha",
+  };
+  return m ? (map[m] ?? m) : "—";
+};
+
+const customerStatusLabel = (s: string) =>
+  s === "delivered" || s === "completed" ? "Entregue" : "Em preparação";
 
 interface Profile {
   full_name: string;
@@ -25,9 +47,12 @@ const empty: Profile = { full_name: "", phone: "", address: "", complement: "", 
 export default function AccountPage() {
   const { user, isAdmin, signOut } = useAuth();
   const [profile, setProfile] = useState<Profile>(empty);
-  const [orders, setOrders] = useState<{ id: string; created_at: string; total: number; status: string }[]>([]);
+  const [orders, setOrders] = useState<OrderRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<OrderFull | null>(null);
+  const [selectedItems, setSelectedItems] = useState<OrderItem[]>([]);
+  const [loadingOrder, setLoadingOrder] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -41,13 +66,27 @@ export default function AccountPage() {
 
       const { data: ord } = await supabase
         .from("orders")
-        .select("id, created_at, total, status")
+        .select("id, created_at, total, status, order_number")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(20);
-      setOrders(ord ?? []);
+      setOrders((ord ?? []) as OrderRow[]);
     })();
   }, [user]);
+
+  const openOrder = async (id: string) => {
+    if (!user) return;
+    setLoadingOrder(true);
+    setSelectedOrder({ id, created_at: "", total: 0, status: "" } as OrderFull);
+    const [{ data: ord }, { data: items }] = await Promise.all([
+      supabase.from("orders").select("*").eq("id", id).eq("user_id", user.id).maybeSingle(),
+      supabase.from("order_items").select("id, product_name, quantity, unit_price, discount_percent, subtotal").eq("order_id", id),
+    ]);
+    setLoadingOrder(false);
+    if (!ord) { setSelectedOrder(null); toast.error("Pedido não encontrado"); return; }
+    setSelectedOrder(ord as OrderFull);
+    setSelectedItems((items ?? []) as OrderItem[]);
+  };
 
   const save = async () => {
     if (!user) return;
@@ -129,13 +168,18 @@ export default function AccountPage() {
           <div className="rounded-2xl bg-card p-4 space-y-2">
             <h2 className="text-sm font-bold flex items-center gap-2"><Package className="h-4 w-4" /> Meus pedidos</h2>
             {orders.map((o) => (
-              <div key={o.id} className="flex items-center justify-between border-t border-border pt-2 text-xs">
+              <button
+                type="button"
+                key={o.id}
+                onClick={() => openOrder(o.id)}
+                className="flex w-full items-center justify-between border-t border-border pt-2 text-left text-xs transition-colors hover:bg-secondary/30 rounded-md px-1"
+              >
                 <div>
-                  <div className="font-semibold">#{o.id.slice(0, 8)}</div>
-                  <div className="text-muted-foreground">{new Date(o.created_at).toLocaleDateString("pt-BR")} · {statusLabel(o.status)}</div>
+                  <div className="font-semibold">#{o.order_number ?? o.id.slice(0, 8)}</div>
+                  <div className="text-muted-foreground">{new Date(o.created_at).toLocaleDateString("pt-BR")} · {customerStatusLabel(o.status)}</div>
                 </div>
                 <div className="font-bold text-primary">{formatBRL(Number(o.total))}</div>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -158,6 +202,59 @@ export default function AccountPage() {
           <LogOut className="mr-2 h-4 w-4" /> Sair
         </Button>
       </div>
+
+      <Dialog open={!!selectedOrder} onOpenChange={(o) => { if (!o) { setSelectedOrder(null); setSelectedItems([]); } }}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Pedido #{selectedOrder?.order_number ?? selectedOrder?.id.slice(0, 8)}</DialogTitle>
+          </DialogHeader>
+          {loadingOrder || !selectedOrder?.status ? (
+            <p className="text-sm text-muted-foreground">Carregando...</p>
+          ) : selectedOrder && (
+            <div className="space-y-4 text-sm">
+              <div className="rounded-lg bg-secondary/40 p-3">
+                <div className="text-xs text-muted-foreground">Status</div>
+                <div className="font-bold text-primary">{customerStatusLabel(selectedOrder.status)}</div>
+              </div>
+              <div className="space-y-1">
+                <p><span className="text-muted-foreground">Data:</span> <span className="font-medium">{new Date(selectedOrder.created_at).toLocaleString("pt-BR")}</span></p>
+                <p><span className="text-muted-foreground">Pagamento:</span> <span className="font-medium">{paymentLabel(selectedOrder.payment_method)}{selectedOrder.payment_method === "cash" && selectedOrder.change_for ? ` (troco p/ ${formatBRL(Number(selectedOrder.change_for))})` : ""}</span></p>
+              </div>
+              <div className="rounded-lg border border-border p-3 space-y-1">
+                <div className="text-xs font-bold uppercase text-muted-foreground">Cliente</div>
+                <p className="font-medium">{selectedOrder.customer_name || "—"}</p>
+                <p className="text-muted-foreground">{selectedOrder.customer_phone || "—"}</p>
+                <p className="text-muted-foreground">
+                  {[selectedOrder.customer_address, selectedOrder.customer_complement].filter(Boolean).join(" · ") || "—"}
+                </p>
+                <p className="text-muted-foreground">
+                  {[selectedOrder.customer_city, selectedOrder.customer_state].filter(Boolean).join("/")} {selectedOrder.customer_zip || ""}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <div className="text-xs font-bold uppercase text-muted-foreground">Produtos</div>
+                {selectedItems.map((it) => {
+                  const unit = finalPrice(Number(it.unit_price), it.discount_percent || 0);
+                  return (
+                    <div key={it.id} className="flex justify-between gap-2 border-t border-border pt-2 text-xs">
+                      <div className="flex-1">
+                        <div className="font-medium">{it.product_name}</div>
+                        <div className="text-muted-foreground">{it.quantity} × {formatBRL(unit)}</div>
+                      </div>
+                      <div className="font-semibold">{formatBRL(Number(it.subtotal))}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex justify-between border-t border-border pt-3 text-base font-bold">
+                <span>Total</span>
+                <span className="text-primary">{formatBRL(Number(selectedOrder.total))}</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground text-center">Pedido somente para consulta. Não é possível editar.</p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }
@@ -169,19 +266,4 @@ function Field({ label, v, on, placeholder }: { label: string; v: string; on: (v
       <Input value={v} onChange={(e) => on(e.target.value)} placeholder={placeholder} className="h-10" />
     </div>
   );
-}
-
-function statusLabel(s: string): string {
-  const map: Record<string, string> = {
-    pending: "Pedido recebido",
-    awaiting_machine: "Pedido recebido",
-    received: "Pedido recebido",
-    preparing: "Em preparação",
-    in_preparation: "Em preparação",
-    out_for_delivery: "Saiu para entrega",
-    shipped: "Saiu para entrega",
-    delivered: "Entregue",
-    completed: "Entregue",
-  };
-  return map[s] ?? s;
 }
