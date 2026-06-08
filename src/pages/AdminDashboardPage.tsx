@@ -225,7 +225,7 @@ export default function AdminDashboardPage() {
 }
 
 function OrderCard({ order: o, onStatus }: { order: OrderRow; onStatus: (id: string, s: string) => void }) {
-  const canPrint = o.status === "paid" || o.status === "delivered";
+  const canPrint = o.status !== "cancelled";
   return (
     <div className="rounded-2xl bg-card p-3 text-sm">
       <div className="flex items-start justify-between gap-2">
