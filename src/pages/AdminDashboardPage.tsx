@@ -225,7 +225,7 @@ export default function AdminDashboardPage() {
 }
 
 function OrderCard({ order: o, onStatus }: { order: OrderRow; onStatus: (id: string, s: string) => void }) {
-  const canPrint = o.status === "paid" || o.status === "delivered";
+  const canPrint = o.status !== "cancelled";
   return (
     <div className="rounded-2xl bg-card p-3 text-sm">
       <div className="flex items-start justify-between gap-2">
@@ -290,7 +290,7 @@ function OrderCard({ order: o, onStatus }: { order: OrderRow; onStatus: (id: str
           onClick={() => printOrder(o, "58mm")}
           disabled={!canPrint}
           className="ml-auto inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground disabled:opacity-40"
-          title={canPrint ? "Imprimir pedido (58mm)" : "Disponível após marcar como Pago"}
+          title={canPrint ? "Imprimir pedido (58mm)" : "Pedido cancelado"}
         >
           <Printer className="h-3 w-3" /> Imprimir Pedido
         </button>
