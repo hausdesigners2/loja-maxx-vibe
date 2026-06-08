@@ -168,13 +168,18 @@ export default function AccountPage() {
           <div className="rounded-2xl bg-card p-4 space-y-2">
             <h2 className="text-sm font-bold flex items-center gap-2"><Package className="h-4 w-4" /> Meus pedidos</h2>
             {orders.map((o) => (
-              <div key={o.id} className="flex items-center justify-between border-t border-border pt-2 text-xs">
+              <button
+                type="button"
+                key={o.id}
+                onClick={() => openOrder(o.id)}
+                className="flex w-full items-center justify-between border-t border-border pt-2 text-left text-xs transition-colors hover:bg-secondary/30 rounded-md px-1"
+              >
                 <div>
-                  <div className="font-semibold">#{o.id.slice(0, 8)}</div>
-                  <div className="text-muted-foreground">{new Date(o.created_at).toLocaleDateString("pt-BR")} · {statusLabel(o.status)}</div>
+                  <div className="font-semibold">#{o.order_number ?? o.id.slice(0, 8)}</div>
+                  <div className="text-muted-foreground">{new Date(o.created_at).toLocaleDateString("pt-BR")} · {customerStatusLabel(o.status)}</div>
                 </div>
                 <div className="font-bold text-primary">{formatBRL(Number(o.total))}</div>
-              </div>
+              </button>
             ))}
           </div>
         )}
