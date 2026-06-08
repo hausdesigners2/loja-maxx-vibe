@@ -47,9 +47,12 @@ const empty: Profile = { full_name: "", phone: "", address: "", complement: "", 
 export default function AccountPage() {
   const { user, isAdmin, signOut } = useAuth();
   const [profile, setProfile] = useState<Profile>(empty);
-  const [orders, setOrders] = useState<{ id: string; created_at: string; total: number; status: string }[]>([]);
+  const [orders, setOrders] = useState<OrderRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<OrderFull | null>(null);
+  const [selectedItems, setSelectedItems] = useState<OrderItem[]>([]);
+  const [loadingOrder, setLoadingOrder] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -63,13 +66,27 @@ export default function AccountPage() {
 
       const { data: ord } = await supabase
         .from("orders")
-        .select("id, created_at, total, status")
+        .select("id, created_at, total, status, order_number")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(20);
-      setOrders(ord ?? []);
+      setOrders((ord ?? []) as OrderRow[]);
     })();
   }, [user]);
+
+  const openOrder = async (id: string) => {
+    if (!user) return;
+    setLoadingOrder(true);
+    setSelectedOrder({ id, created_at: "", total: 0, status: "" } as OrderFull);
+    const [{ data: ord }, { data: items }] = await Promise.all([
+      supabase.from("orders").select("*").eq("id", id).eq("user_id", user.id).maybeSingle(),
+      supabase.from("order_items").select("id, product_name, quantity, unit_price, discount_percent, subtotal").eq("order_id", id),
+    ]);
+    setLoadingOrder(false);
+    if (!ord) { setSelectedOrder(null); toast.error("Pedido não encontrado"); return; }
+    setSelectedOrder(ord as OrderFull);
+    setSelectedItems((items ?? []) as OrderItem[]);
+  };
 
   const save = async () => {
     if (!user) return;
