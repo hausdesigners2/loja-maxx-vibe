@@ -6,9 +6,31 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { formatBRL } from "@/lib/format";
+import { formatBRL, finalPrice } from "@/lib/format";
+
+interface OrderRow { id: string; created_at: string; total: number; status: string; order_number?: number | null }
+interface OrderItem { id: string; product_name: string; quantity: number; unit_price: number; discount_percent: number; subtotal: number }
+interface OrderFull extends OrderRow {
+  customer_name: string | null; customer_phone: string | null;
+  customer_address: string | null; customer_complement: string | null;
+  customer_city: string | null; customer_state: string | null; customer_zip: string | null;
+  payment_method: string | null; change_for: number | null;
+}
+
+const paymentLabel = (m: string | null) => {
+  const map: Record<string, string> = {
+    cash: "Dinheiro", pix: "Pix", debit: "Débito", credit: "Crédito",
+    machine: "Maquininha", awaiting_machine: "Aguardando maquininha",
+    machine_on_delivery: "À receber na maquininha",
+  };
+  return m ? (map[m] ?? m) : "—";
+};
+
+const customerStatusLabel = (s: string) =>
+  s === "delivered" || s === "completed" ? "Entregue" : "Em preparação";
 
 interface Profile {
   full_name: string;
