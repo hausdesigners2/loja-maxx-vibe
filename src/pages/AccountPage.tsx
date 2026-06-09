@@ -178,7 +178,10 @@ export default function AccountPage() {
                   <div className="font-semibold">#{o.order_number ?? o.id.slice(0, 8)}</div>
                   <div className="text-muted-foreground">{new Date(o.created_at).toLocaleDateString("pt-BR")} · {customerStatusLabel(o.status)}</div>
                 </div>
-                <div className="font-bold text-primary">{formatBRL(Number(o.total))}</div>
+                <div className="flex flex-col items-end">
+                  <div className="font-bold text-primary">{formatBRL(Number(o.total))}</div>
+                  <span className="text-[11px] text-primary underline underline-offset-2">Ver detalhes</span>
+                </div>
               </button>
             ))}
           </div>
