@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { ArrowDownAZ, ArrowUpAZ, ChevronLeft, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
+import { ArrowDownAZ, ArrowUpAZ, ChevronLeft, Pencil, Plus, Search, Trash2, Upload, Database, CheckCircle, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { useAuth } from "@/contexts/AuthContext";
@@ -10,11 +10,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { formatBRL } from "@/lib/format";
+import { SEED_CATEGORIES, SEED_PRODUCTS } from "@/lib/seedData";
 
 type Product = Tables<"products">;
 type Category = Tables<"categories">;
@@ -48,6 +49,8 @@ export default function AdminPage() {
   const [saving, setSaving] = useState(false);
   const [search, setSearch] = useState("");
   const [sortAsc, setSortAsc] = useState(true);
+  const [activeTab, setActiveTab] = useState<"products" | "setup">("products");
+  const [seeding, setSeeding] = useState(false);
 
   const visibleProducts = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -67,7 +70,6 @@ export default function AdminPage() {
     setCategories(c ?? []);
   };
 
-  // Re-verify admin role on mount via secure RPC and log access attempts.
   useEffect(() => {
     if (loading) return;
     if (!user) return;
@@ -143,6 +145,73 @@ export default function AdminPage() {
     reload();
   };
 
+  const handleSeedDatabase = async () => {
+    setSeeding(true);
+    try {
+      // 1. Criar categorias se não existirem
+      toast.info("Criando categorias iniciais...");
+      const insertedCategories: Record<string, string> = {};
+
+      for (const cat of SEED_CATEGORIES) {
+        // Verifica se já existe
+        const { data: existing } = await supabase
+          .from("categories")
+          .select("id")
+          .eq("slug", cat.slug)
+          .maybeSingle();
+
+        if (existing) {
+          insertedCategories[cat.slug] = existing.id;
+        } else {
+          const { data: inserted, error } = await supabase
+            .from("categories")
+            .insert(cat)
+            .select("id")
+            .single();
+          
+          if (error) throw error;
+          if (inserted) insertedCategories[cat.slug] = inserted.id;
+        }
+      }
+
+      // 2. Criar produtos vinculados às categorias
+      toast.info("Criando produtos iniciais...");
+      let count = 0;
+      for (const prod of SEED_PRODUCTS) {
+        const catId = insertedCategories[prod.category_slug];
+        if (!catId) continue;
+
+        // Verifica se já existe
+        const { data: existing } = await supabase
+          .from("products")
+          .select("id")
+          .eq("name", prod.name)
+          .maybeSingle();
+
+        if (!existing) {
+          const { category_slug, ...productData } = prod;
+          const { error } = await supabase
+            .from("products")
+            .insert({
+              ...productData,
+              category_id: catId,
+            });
+          if (error) throw error;
+          count++;
+        }
+      }
+
+      toast.success(`Migração concluída! ${count} novos produtos adicionados.`);
+      await reload();
+      setActiveTab("products");
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro ao migrar dados: " + (error as Error).message);
+    } finally {
+      setSeeding(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-background">
@@ -151,18 +220,29 @@ export default function AdminPage() {
             <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground">
               <ChevronLeft className="h-4 w-4" /> Loja
             </Link>
-            <Button size="sm" className="gradient-primary" onClick={openNew}>
-              <Plus className="mr-1 h-4 w-4" /> Novo
-            </Button>
+            {activeTab === "products" && (
+              <Button size="sm" className="gradient-primary" onClick={openNew}>
+                <Plus className="mr-1 h-4 w-4" /> Novo
+              </Button>
+            )}
           </div>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Painel Administrativo</h1>
           <div className="mt-3 flex gap-6 border-b border-border">
             <Link to="/admin/dashboard" className="pb-2 text-sm font-medium text-muted-foreground">
               Pedidos
             </Link>
-            <span className="-mb-px border-b-2 border-primary pb-2 text-sm font-bold text-foreground">
+            <button 
+              onClick={() => setActiveTab("products")}
+              className={`pb-2 text-sm font-bold ${activeTab === "products" ? "border-b-2 border-primary text-foreground" : "text-muted-foreground"}`}
+            >
               Produtos
-            </span>
+            </button>
+            <button 
+              onClick={() => setActiveTab("setup")}
+              className={`pb-2 text-sm font-bold flex items-center gap-1.5 ${activeTab === "setup" ? "border-b-2 border-primary text-foreground" : "text-muted-foreground"}`}
+            >
+              <Database className="h-4 w-4" /> Configuração
+            </button>
             <Link to="/admin/banners" className="pb-2 text-sm font-medium text-muted-foreground">
               Banners
             </Link>
@@ -171,61 +251,114 @@ export default function AdminPage() {
       </header>
 
       <main className="mx-auto max-w-3xl space-y-3 px-4 py-4">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm text-muted-foreground">{visibleProducts.length} produto(s) cadastrado(s)</p>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setSortAsc((v) => !v)}
-            title={sortAsc ? "Ordem A → Z" : "Ordem Z → A"}
-          >
-            {sortAsc ? <ArrowDownAZ className="mr-1 h-4 w-4" /> : <ArrowUpAZ className="mr-1 h-4 w-4" />}
-            {sortAsc ? "A → Z" : "Z → A"}
-          </Button>
-        </div>
+        {activeTab === "products" ? (
+          <>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm text-muted-foreground">{visibleProducts.length} produto(s) cadastrado(s)</p>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSortAsc((v) => !v)}
+                title={sortAsc ? "Ordem A → Z" : "Ordem Z → A"}
+              >
+                {sortAsc ? <ArrowDownAZ className="mr-1 h-4 w-4" /> : <ArrowUpAZ className="mr-1 h-4 w-4" />}
+                {sortAsc ? "A → Z" : "Z → A"}
+              </Button>
+            </div>
 
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar produtos cadastrados..."
-            className="pl-9"
-          />
-        </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar produtos cadastrados..."
+                className="pl-9"
+              />
+            </div>
 
-        {visibleProducts.map((p) => {
-          const cat = categories.find((c) => c.id === p.category_id);
-          return (
-            <div key={p.id} className="flex gap-3 rounded-2xl bg-card p-3">
-              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-secondary">
-                {p.image_url
-                  ? <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" />
-                  : <div className="grid h-full place-items-center text-2xl">📦</div>}
+            {visibleProducts.map((p) => {
+              const cat = categories.find((c) => c.id === p.category_id);
+              return (
+                <div key={p.id} className="flex gap-3 rounded-2xl bg-card p-3">
+                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-secondary">
+                    {p.image_url
+                      ? <img src={p.image_url} alt={p.name} className="h-full w-full object-cover" />
+                      : <div className="grid h-full place-items-center text-2xl">📦</div>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="truncate text-sm font-semibold">{p.name}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {cat?.icon} {cat?.name} · {formatBRL(Number(p.price))}
+                      {p.discount_percent > 0 && ` · -${p.discount_percent}%`}
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {!p.active && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">inativo</span>}
+                      {p.is_best_seller && <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] text-primary">+ vendido</span>}
+                      {p.is_featured && <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] text-primary">destaque</span>}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Button size="icon" variant="outline" onClick={() => openEdit(p)}><Pencil className="h-4 w-4" /></Button>
+                    <Button size="icon" variant="outline" onClick={() => remove(p.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {visibleProducts.length === 0 && (
+              <div className="rounded-2xl bg-card p-8 text-center text-sm text-muted-foreground">
+                {products.length === 0 ? 'Nenhum produto. Clique em "Novo" para cadastrar o primeiro.' : "Nenhum produto encontrado."}
               </div>
-              <div className="flex-1 min-w-0">
-                <h3 className="truncate text-sm font-semibold">{p.name}</h3>
-                <p className="text-xs text-muted-foreground">
-                  {cat?.icon} {cat?.name} · {formatBRL(Number(p.price))}
-                  {p.discount_percent > 0 && ` · -${p.discount_percent}%`}
-                </p>
-                <div className="mt-1 flex flex-wrap gap-1">
-                  {!p.active && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">inativo</span>}
-                  {p.is_best_seller && <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] text-primary">+ vendido</span>}
-                  {p.is_featured && <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] text-primary">destaque</span>}
+            )}
+          </>
+        ) : (
+          <div className="space-y-6 animate-fade-in">
+            <div className="rounded-2xl bg-card p-5 border border-border space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary">
+                  <Database className="h-5 w-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold">Conexão com o Supabase</h2>
+                  <p className="text-xs text-muted-foreground">Status e ferramentas de migração de dados</p>
                 </div>
               </div>
-              <div className="flex flex-col gap-1">
-                <Button size="icon" variant="outline" onClick={() => openEdit(p)}><Pencil className="h-4 w-4" /></Button>
-                <Button size="icon" variant="outline" onClick={() => remove(p.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+
+              <div className="p-4 rounded-xl bg-secondary/40 border border-border space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">URL do Banco:</span>
+                  <span className="font-mono text-xs truncate max-w-[250px]">{import.meta.env.VITE_SUPABASE_URL}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Status da Conexão:</span>
+                  <span className="flex items-center gap-1 text-xs font-bold text-green-500">
+                    <CheckCircle className="h-4 w-4" /> Conectado
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-sm font-bold">Migração de Dados Iniciais</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Se o seu banco de dados do Supabase estiver vazio, você pode carregar as categorias e produtos de exemplo (com imagens de alta qualidade hospedadas) diretamente para o seu banco de dados com o botão abaixo.
+                </p>
+
+                <div className="flex items-start gap-2.5 p-3 rounded-xl bg-yellow-500/10 border border-yellow-500/20 text-xs text-yellow-500">
+                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>
+                    Esta ação irá verificar se as categorias e produtos já existem no banco de dados para evitar duplicatas.
+                  </span>
+                </div>
+
+                <Button 
+                  onClick={handleSeedDatabase} 
+                  disabled={seeding}
+                  className="w-full gradient-primary shadow-glow font-bold"
+                >
+                  {seeding ? "Migrando dados..." : "Migrar Categorias e Produtos Iniciais"}
+                </Button>
               </div>
             </div>
-          );
-        })}
-
-        {visibleProducts.length === 0 && (
-          <div className="rounded-2xl bg-card p-8 text-center text-sm text-muted-foreground">
-            {products.length === 0 ? 'Nenhum produto. Clique em "Novo" para cadastrar o primeiro.' : "Nenhum produto encontrado."}
           </div>
         )}
       </main>
