@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { ArrowDownAZ, ArrowUpAZ, ChevronLeft, Pencil, Plus, Search, Trash2, Upload } from "lucide-react";
+import { ArrowDownAZ, ArrowUpAZ, ChevronLeft, Pencil, Plus, Search, Trash2, Upload, Database } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { useAuth } from "@/contexts/AuthContext";
@@ -46,6 +46,7 @@ export default function AdminPage() {
   const [form, setForm] = useState<FormState>(empty);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [seeding, setSeeding] = useState(false);
   const [search, setSearch] = useState("");
   const [sortAsc, setSortAsc] = useState(true);
 
@@ -143,6 +144,162 @@ export default function AdminPage() {
     reload();
   };
 
+  const seedDatabase = async () => {
+    if (!confirm("Deseja carregar os dados iniciais (Categorias, Produtos e Banners) no Supabase?")) return;
+    setSeeding(true);
+    try {
+      // 1. Criar Categorias se não existirem
+      const defaultCategories = [
+        { name: "Bebidas", slug: "bebidas", icon: "🥤", sort_order: 1 },
+        { name: "Cereais", slug: "cereais", icon: "🌾", sort_order: 2 },
+        { name: "Massas", slug: "massas", icon: "🍝", sort_order: 3 },
+        { name: "Laticínios", slug: "laticinios", icon: "🧀", sort_order: 4 },
+        { name: "Doces", slug: "doces", icon: "🍬", sort_order: 5 },
+      ];
+
+      for (const cat of defaultCategories) {
+        const { data: existing } = await supabase
+          .from("categories")
+          .select("id")
+          .eq("slug", cat.slug)
+          .maybeSingle();
+
+        if (!existing) {
+          await supabase.from("categories").insert(cat);
+        }
+      }
+
+      // Recarregar categorias para obter os IDs corretos
+      const { data: freshCats } = await supabase.from("categories").select("*");
+      if (!freshCats) throw new Error("Falha ao carregar categorias criadas");
+
+      const catMap = new Map(freshCats.map((c) => [c.slug, c.id]));
+
+      // 2. Criar Produtos de Exemplo com imagens de alta qualidade
+      const defaultProducts = [
+        {
+          name: "Suco de Laranja Integral 1L",
+          description: "Suco de laranja 100% natural, sem adição de açúcares ou conservantes.",
+          price: 12.90,
+          discount_percent: 10,
+          category_id: catMap.get("bebidas"),
+          image_url: "https://images.unsplash.com/photo-1621506289937-a8e4df240d0b?w=600&auto=format&fit=crop&q=80",
+          is_best_seller: true,
+          is_featured: true,
+          active: true,
+          stock: 50,
+        },
+        {
+          name: "Refrigerante Cola 2L",
+          description: "O clássico sabor refrescante para acompanhar suas refeições.",
+          price: 8.50,
+          discount_percent: 0,
+          category_id: catMap.get("bebidas"),
+          image_url: "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=600&auto=format&fit=crop&q=80",
+          is_best_seller: false,
+          is_featured: true,
+          active: true,
+          stock: 100,
+        },
+        {
+          name: "Arroz Agulhinha Tipo 1 - 5kg",
+          description: "Arroz de excelente qualidade, soltinho e saboroso.",
+          price: 24.90,
+          discount_percent: 0,
+          category_id: catMap.get("cereais"),
+          image_url: "https://images.unsplash.com/photo-1586444248902-2f64eddc13df?w=600&auto=format&fit=crop&q=80",
+          is_best_seller: true,
+          is_featured: true,
+          active: true,
+          stock: 40,
+        },
+        {
+          name: "Feijão Carioca 1kg",
+          description: "Feijão carioca novo, de cozimento rápido e caldo grosso.",
+          price: 7.80,
+          discount_percent: 5,
+          category_id: catMap.get("cereais"),
+          image_url: "https://images.unsplash.com/photo-1551462147-ff29053bfc14?w=600&auto=format&fit=crop&q=80",
+          is_best_seller: true,
+          is_featured: false,
+          active: true,
+          stock: 60,
+        },
+        {
+          name: "Macarrão Espaguete 500g",
+          description: "Massa de sêmola de trigo duro, perfeita com molho de tomate.",
+          price: 4.50,
+          discount_percent: 0,
+          category_id: catMap.get("massas"),
+          image_url: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?w=600&auto=format&fit=crop&q=80",
+          is_best_seller: false,
+          is_featured: true,
+          active: true,
+          stock: 80,
+        },
+        {
+          name: "Queijo Muçarela Fatiado 150g",
+          description: "Queijo muçarela fresco e saboroso, ideal para lanches.",
+          price: 9.90,
+          discount_percent: 15,
+          category_id: catMap.get("laticinios"),
+          image_url: "https://images.unsplash.com/photo-1552763442-1b418f4529e5?w=600&auto=format&fit=crop&q=80",
+          is_best_seller: true,
+          is_featured: true,
+          active: true,
+          stock: 30,
+        },
+      ];
+
+      for (const prod of defaultProducts) {
+        const { data: existing } = await supabase
+          .from("products")
+          .select("id")
+          .eq("name", prod.name)
+          .maybeSingle();
+
+        if (!existing) {
+          await supabase.from("products").insert(prod);
+        }
+      }
+
+      // 3. Criar Banners de Exemplo se não existirem
+      const defaultBanners = [
+        {
+          title: "Super Ofertas da Semana",
+          subtitle: "Aproveite descontos imperdíveis em todo o setor de mercearia com entrega rápida.",
+          image_url: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=1600&auto=format&fit=crop&q=80",
+          button_text: "Ver Ofertas",
+          link_url: "/categoria/bebidas",
+          active: true,
+          sort_order: 1,
+        },
+        {
+          title: "Hortifrúti Fresquinho",
+          subtitle: "Frutas, legumes e verduras selecionados diretamente para a sua mesa.",
+          image_url: "https://images.unsplash.com/photo-1608686207856-001b95cf60ca?w=1600&auto=format&fit=crop&q=80",
+          button_text: "Comprar Agora",
+          link_url: "/categoria/cereais",
+          active: true,
+          sort_order: 2,
+        },
+      ];
+
+      const { data: existingBanners } = await supabase.from("banners").select("id");
+      if (!existingBanners || existingBanners.length === 0) {
+        await supabase.from("banners").insert(defaultBanners);
+      }
+
+      toast.success("Banco de dados semeado com sucesso!");
+      reload();
+    } catch (error) {
+      console.error(error);
+      toast.error("Erro ao semear banco de dados.");
+    } finally {
+      setSeeding(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-background">
@@ -151,9 +308,14 @@ export default function AdminPage() {
             <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground">
               <ChevronLeft className="h-4 w-4" /> Loja
             </Link>
-            <Button size="sm" className="gradient-primary" onClick={openNew}>
-              <Plus className="mr-1 h-4 w-4" /> Novo
-            </Button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" className="border-primary/40 text-primary hover:bg-primary/10" onClick={seedDatabase} disabled={seeding}>
+                <Database className="mr-1 h-4 w-4" /> {seeding ? "Semeando..." : "Semear Dados"}
+              </Button>
+              <Button size="sm" className="gradient-primary" onClick={openNew}>
+                <Plus className="mr-1 h-4 w-4" /> Novo
+              </Button>
+            </div>
           </div>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Painel Administrativo</h1>
           <div className="mt-3 flex gap-6 border-b border-border">
@@ -225,7 +387,7 @@ export default function AdminPage() {
 
         {visibleProducts.length === 0 && (
           <div className="rounded-2xl bg-card p-8 text-center text-sm text-muted-foreground">
-            {products.length === 0 ? 'Nenhum produto. Clique em "Novo" para cadastrar o primeiro.' : "Nenhum produto encontrado."}
+            {products.length === 0 ? 'Nenhum produto. Clique em "Semear Dados" para carregar os dados iniciais ou em "Novo" para cadastrar.' : "Nenhum produto encontrado."}
           </div>
         )}
       </main>
