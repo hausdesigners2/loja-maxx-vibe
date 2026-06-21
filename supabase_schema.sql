@@ -8,6 +8,8 @@ DROP TRIGGER IF EXISTS trigger_update_products_updated_at ON public.products;
 DROP TRIGGER IF EXISTS trigger_update_banners_updated_at ON public.banners;
 DROP TRIGGER IF EXISTS trigger_update_customer_profiles_updated_at ON public.customer_profiles;
 DROP TRIGGER IF EXISTS trigger_update_orders_updated_at ON public.orders;
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
 DROP FUNCTION IF EXISTS public.update_updated_at_column() CASCADE;
 DROP FUNCTION IF EXISTS public.has_role(UUID, public.app_role) CASCADE;
 
@@ -188,6 +190,34 @@ BEGIN
   );
 END;
 $$;
+
+-- Função para criar perfil automático após o cadastro (Trigger de Autenticação)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.customer_profiles (user_id, email, full_name, phone, address, city, state, zip)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data ->> 'full_name', 'Novo Cliente'),
+    COALESCE(NEW.raw_user_meta_data ->> 'phone', '—'),
+    COALESCE(NEW.raw_user_meta_data ->> 'address', '—'),
+    '—',
+    '—',
+    '—'
+  );
+  RETURN NEW;
+END;
+$$;
+
+-- Trigger para disparar a função após a criação do usuário no auth.users
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- =============================================================================
 -- CONFIGURAÇÃO DE GRANTS (PERMISSÕES API)
