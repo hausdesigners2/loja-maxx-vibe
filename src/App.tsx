@@ -18,6 +18,7 @@ import ResetPasswordPage from "./pages/ResetPasswordPage";
 import AdminPage from "./pages/AdminPage";
 import AdminBannersPage from "./pages/AdminBannersPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
+import AdminAnalyticsPage from "./pages/AdminAnalyticsPage";
 
 const queryClient = new QueryClient();
 
@@ -42,6 +43,7 @@ const App = () => (
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/admin/banners" element={<AdminBannersPage />} />
               <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
+              <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>
