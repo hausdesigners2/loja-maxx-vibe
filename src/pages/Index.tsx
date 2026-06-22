@@ -33,12 +33,48 @@ const Index = () => {
 
   useEffect(() => {
     (async () => {
-      const [cats, best, feat] = await Promise.all([
-        supabase.from("categories").select("*").order("sort_order"),
+      // 1. Buscar categorias existentes
+      let { data: cats } = await supabase
+        .from("categories")
+        .select("*")
+        .order("sort_order", { ascending: true });
+      
+      cats = cats ?? [];
+
+      // 2. Verificar se Biscoitos e Bazar existem, se não, tentar inserir
+      const hasBiscoitos = cats.some((c) => c.slug === "biscoitos");
+      const hasBazar = cats.some((c) => c.slug === "bazar");
+
+      if (!hasBiscoitos || !hasBazar) {
+        const toInsert = [];
+        if (!hasBiscoitos) {
+          toInsert.push({ name: "Biscoitos", slug: "biscoitos", icon: "🍪", sort_order: 6 });
+        }
+        if (!hasBazar) {
+          toInsert.push({ name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7 });
+        }
+
+        // Tenta inserir (pode requerer permissão, mas se falhar não quebra o app)
+        try {
+          const { error } = await supabase.from("categories").insert(toInsert);
+          if (!error) {
+            const { data: updatedCats } = await supabase
+              .from("categories")
+              .select("*")
+              .order("sort_order", { ascending: true });
+            cats = updatedCats ?? cats;
+          }
+        } catch (e) {
+          console.warn("Não foi possível auto-cadastrar as categorias ausentes:", e);
+        }
+      }
+
+      const [best, feat] = await Promise.all([
         supabase.from("products").select("*").eq("active", true).eq("is_best_seller", true).limit(40),
         supabase.from("products").select("*").eq("active", true).eq("is_featured", true).limit(8),
       ]);
-      setCategories(cats.data ?? []);
+
+      setCategories(cats);
       setBestSellersPool(shuffle(best.data ?? []));
       setFeatured(feat.data ?? []);
       setLoading(false);

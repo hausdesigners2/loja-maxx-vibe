@@ -44,7 +44,9 @@ const INITIAL_CATEGORIES = [
   { name: "Massas", slug: "massas", icon: "🍝", sort_order: 2 },
   { name: "Bebidas", slug: "bebidas", icon: "🥤", sort_order: 3 },
   { name: "Laticínios", slug: "laticinios", icon: "🧀", sort_order: 4 },
-  { name: "Limpeza", slug: "limpeza", icon: "🧹", sort_order: 5 }
+  { name: "Limpeza", slug: "limpeza", icon: "🧹", sort_order: 5 },
+  { name: "Biscoitos", slug: "biscoitos", icon: "🍪", sort_order: 6 },
+  { name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7 }
 ];
 
 const INITIAL_PRODUCTS = [
