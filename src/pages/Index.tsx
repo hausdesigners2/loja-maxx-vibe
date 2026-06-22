@@ -14,6 +14,23 @@ const VISIBLE = 8;
 const STEP = 4;
 const INTERVAL_MS = 10000;
 
+const DEFAULT_CATEGORIES = [
+  { id: "1", name: "Cereais e Grãos", slug: "cereais-e-graos", icon: "🌾", sort_order: 1, created_at: "" },
+  { id: "2", name: "Massas", slug: "massas", icon: "🍝", sort_order: 2, created_at: "" },
+  { id: "3", name: "Bebidas", slug: "bebidas", icon: "🥤", sort_order: 3, created_at: "" },
+  { id: "4", name: "Laticínios", slug: "laticinios", icon: "🧀", sort_order: 4, created_at: "" },
+  { id: "5", name: "Limpeza", slug: "limpeza", icon: "🧹", sort_order: 5, created_at: "" },
+  { id: "6", name: "Biscoitos", slug: "biscoitos", icon: "🍪", sort_order: 6, created_at: "" },
+  { id: "7", name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7, created_at: "" }
+];
+
+function mergeCategories(fetched: Category[]): Category[] {
+  const map = new Map<string, Category>();
+  DEFAULT_CATEGORIES.forEach(c => map.set(c.slug, c as Category));
+  fetched.forEach(c => map.set(c.slug, c));
+  return Array.from(map.values()).sort((a, b) => a.sort_order - b.sort_order);
+}
+
 function shuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -41,7 +58,7 @@ const Index = () => {
       
       cats = cats ?? [];
 
-      // 2. Verificar se Biscoitos e Bazar existem, se não, tentar inserir
+      // 2. Verificar se Biscoitos e Bazar existem, se não, tentar inserir no banco
       const hasBiscoitos = cats.some((c) => c.slug === "biscoitos");
       const hasBazar = cats.some((c) => c.slug === "bazar");
 
@@ -54,7 +71,6 @@ const Index = () => {
           toInsert.push({ name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7 });
         }
 
-        // Tenta inserir (pode requerer permissão, mas se falhar não quebra o app)
         try {
           const { error } = await supabase.from("categories").insert(toInsert);
           if (!error) {
@@ -65,7 +81,7 @@ const Index = () => {
             cats = updatedCats ?? cats;
           }
         } catch (e) {
-          console.warn("Não foi possível auto-cadastrar as categorias ausentes:", e);
+          console.warn("Não foi possível auto-cadastrar as categorias ausentes no banco:", e);
         }
       }
 
@@ -74,7 +90,8 @@ const Index = () => {
         supabase.from("products").select("*").eq("active", true).eq("is_featured", true).limit(8),
       ]);
 
-      setCategories(cats);
+      // Mescla com a lista padrão para garantir exibição imediata
+      setCategories(mergeCategories(cats));
       setBestSellersPool(shuffle(best.data ?? []));
       setFeatured(feat.data ?? []);
       setLoading(false);

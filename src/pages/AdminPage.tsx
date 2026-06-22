@@ -49,6 +49,23 @@ const INITIAL_CATEGORIES = [
   { name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7 }
 ];
 
+const DEFAULT_CATEGORIES = [
+  { id: "1", name: "Cereais e Grãos", slug: "cereais-e-graos", icon: "🌾", sort_order: 1, created_at: "" },
+  { id: "2", name: "Massas", slug: "massas", icon: "🍝", sort_order: 2, created_at: "" },
+  { id: "3", name: "Bebidas", slug: "bebidas", icon: "🥤", sort_order: 3, created_at: "" },
+  { id: "4", name: "Laticínios", slug: "laticinios", icon: "🧀", sort_order: 4, created_at: "" },
+  { id: "5", name: "Limpeza", slug: "limpeza", icon: "🧹", sort_order: 5, created_at: "" },
+  { id: "6", name: "Biscoitos", slug: "biscoitos", icon: "🍪", sort_order: 6, created_at: "" },
+  { id: "7", name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7, created_at: "" }
+];
+
+function mergeCategories(fetched: Category[]): Category[] {
+  const map = new Map<string, Category>();
+  DEFAULT_CATEGORIES.forEach(c => map.set(c.slug, c as Category));
+  fetched.forEach(c => map.set(c.slug, c));
+  return Array.from(map.values()).sort((a, b) => a.sort_order - b.sort_order);
+}
+
 const INITIAL_PRODUCTS = [
   { name: "Arroz Integral Tipo 1 - 1kg", description: "Arroz integral de alta qualidade, rico em fibras.", price: 8.90, discount_percent: 0, is_best_seller: true, is_featured: true, stock: 100, image_url: "https://images.unsplash.com/photo-1586201375761-83865001e31c?w=500&q=80" },
   { name: "Feijão Carioca Tipo 1 - 1kg", description: "Feijão carioca novo, cozinha rápido e rende muito.", price: 7.50, discount_percent: 10, is_best_seller: true, is_featured: true, stock: 150, image_url: "https://images.unsplash.com/photo-1551462147-ff29053bfc14?w=500&q=80" },
@@ -89,7 +106,7 @@ export default function AdminPage() {
       supabase.from("categories").select("*").order("sort_order"),
     ]);
     setProducts(p ?? []);
-    setCategories(c ?? []);
+    setCategories(mergeCategories(c ?? []));
   };
 
   useEffect(() => {

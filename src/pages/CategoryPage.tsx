@@ -28,6 +28,23 @@ const SORT_LABELS: Record<SortKey, string> = {
   name: "Nome (A-Z)",
 };
 
+const DEFAULT_CATEGORIES = [
+  { id: "1", name: "Cereais e Grãos", slug: "cereais-e-graos", icon: "🌾", sort_order: 1, created_at: "" },
+  { id: "2", name: "Massas", slug: "massas", icon: "🍝", sort_order: 2, created_at: "" },
+  { id: "3", name: "Bebidas", slug: "bebidas", icon: "🥤", sort_order: 3, created_at: "" },
+  { id: "4", name: "Laticínios", slug: "laticinios", icon: "🧀", sort_order: 4, created_at: "" },
+  { id: "5", name: "Limpeza", slug: "limpeza", icon: "🧹", sort_order: 5, created_at: "" },
+  { id: "6", name: "Biscoitos", slug: "biscoitos", icon: "🍪", sort_order: 6, created_at: "" },
+  { id: "7", name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7, created_at: "" }
+];
+
+function mergeCategories(fetched: Category[]): Category[] {
+  const map = new Map<string, Category>();
+  DEFAULT_CATEGORIES.forEach(c => map.set(c.slug, c as Category));
+  fetched.forEach(c => map.set(c.slug, c));
+  return Array.from(map.values()).sort((a, b) => a.sort_order - b.sort_order);
+}
+
 export default function CategoryPage() {
   const { slug } = useParams();
   const [categories, setCategories] = useState<Category[]>([]);
@@ -43,9 +60,13 @@ export default function CategoryPage() {
         .from("categories")
         .select("*")
         .order("sort_order");
-      setCategories(cats ?? []);
-      const cat = cats?.find((c) => c.slug === slug) ?? null;
+      
+      const merged = mergeCategories(cats ?? []);
+      setCategories(merged);
+      
+      const cat = merged.find((c) => c.slug === slug) ?? null;
       setCurrent(cat);
+      
       if (cat) {
         const { data } = await supabase
           .from("products")
