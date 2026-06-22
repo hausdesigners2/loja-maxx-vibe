@@ -42,7 +42,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const storageKeyRef = useRef<string | null>(null);
   const hydrated = useRef(false);
 
-  // Resolve which cart to load whenever auth changes
   useEffect(() => {
     let active = true;
 
@@ -55,7 +54,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         hydrated.current = true;
         return;
       }
-      // Check admin — admins do not have a shopping cart
+      
       let admin = false;
       try {
         const { data } = await supabase.rpc("has_role", { _user_id: userId, _role: "admin" });
@@ -110,7 +109,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     return true;
   };
 
-  const add: CartContextValue["add"] = (p, qty = 1) => {
+  const add = (p: Omit<CartItem, "quantity">, qty = 1) => {
     if (!guard()) return;
     setItems((prev) => {
       const existing = prev.find((x) => x.id === p.id);
@@ -154,7 +153,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
   );
 }
 
-// Remove legacy shared cart key from any device that still has it
+export function useCart() {
+  const ctx = useContext(CartContext);
+  if (!ctx) {
+    throw new Error("useCart must be used within CartProvider");
+  }
+  return ctx;
+}
+
 if (typeof window !== "undefined") {
-  try { localStorage.removeItem("loja-maxx-cart"); localStorage.removeItem(ADMIN_FLAG_KEY); } catch { /* ignore */ }
+  try {
+    localStorage.removeItem("loja-maxx-cart");
+    localStorage.removeItem(ADMIN_FLAG_KEY);
+  } catch {
+    /* ignore */
+  }
 }
