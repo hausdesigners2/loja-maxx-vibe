@@ -37,9 +37,9 @@ function readCart(key: string): CartItem[] {
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [storageKey, setStorageKey] = useState<string | null>(null);
-  const [isAdminCart, setIsAdminCart] = useState(false);
   const [items, setItems] = useState<CartItem[]>([]);
+  const [isAdminCart, setIsAdminCart] = useState(false);
+  const storageKeyRef = useRef<string | null>(null);
   const hydrated = useRef(false);
 
   // Resolve which cart to load whenever auth changes
@@ -50,7 +50,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (!active) return;
       if (!userId) {
         setIsAdminCart(false);
-        setStorageKey(GUEST_KEY);
+        storageKeyRef.current = GUEST_KEY;
         setItems(readCart(GUEST_KEY));
         hydrated.current = true;
         return;
@@ -66,13 +66,13 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (!active) return;
       setIsAdminCart(admin);
       if (admin) {
-        setStorageKey(null);
+        storageKeyRef.current = null;
         setItems([]);
         hydrated.current = true;
         return;
       }
       const key = userKey(userId);
-      setStorageKey(key);
+      storageKeyRef.current = key;
       setItems(readCart(key));
       hydrated.current = true;
     };
@@ -93,15 +93,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Persist only to the active user's key (never write across users / never write for admin)
-  useEffect(() => {
-    if (!hydrated.current || !storageKey || isAdminCart) return;
+  const saveCart = (newItems: CartItem[]) => {
+    if (!hydrated.current || !storageKeyRef.current || isAdminCart) return;
     try {
-      localStorage.setItem(storageKey, JSON.stringify(items));
+      localStorage.setItem(storageKeyRef.current, JSON.stringify(newItems));
     } catch {
       /* ignore */
     }
-  }, [items, storageKey, isAdminCart]);
+  };
 
   const guard = () => {
     if (isAdminCart) {
@@ -115,20 +114,36 @@ export function CartProvider({ children }: { children: ReactNode }) {
     if (!guard()) return;
     setItems((prev) => {
       const existing = prev.find((x) => x.id === p.id);
-      if (existing) {
-        return prev.map((x) => x.id === p.id ? { ...x, quantity: x.quantity + qty } : x);
-      }
-      return [...prev, { ...p, quantity: qty }];
+      const next = existing
+        ? prev.map((x) => x.id === p.id ? { ...x, quantity: x.quantity + qty } : x)
+        : [...prev, { ...p, quantity: qty }];
+      saveCart(next);
+      return next;
     });
     toast.success(`${p.name} adicionado ao carrinho`);
   };
 
-  const remove = (id: string) => setItems((prev) => prev.filter((x) => x.id !== id));
+  const remove = (id: string) => {
+    setItems((prev) => {
+      const next = prev.filter((x) => x.id !== id);
+      saveCart(next);
+      return next;
+    });
+  };
+
   const setQty = (id: string, qty: number) => {
     if (qty <= 0) return remove(id);
-    setItems((prev) => prev.map((x) => x.id === id ? { ...x, quantity: qty } : x));
+    setItems((prev) => {
+      const next = prev.map((x) => x.id === id ? { ...x, quantity: qty } : x);
+      saveCart(next);
+      return next;
+    });
   };
-  const clear = () => setItems([]);
+
+  const clear = () => {
+    setItems([]);
+    saveCart([]);
+  };
 
   const count = items.reduce((s, x) => s + x.quantity, 0);
 
@@ -138,12 +153,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
     </CartContext.Provider>
   );
 }
-
-export const useCart = () => {
-  const ctx = useContext(CartContext);
-  if (!ctx) throw new Error("useCart must be used within CartProvider");
-  return ctx;
-};
 
 // Remove legacy shared cart key from any device that still has it
 if (typeof window !== "undefined") {
