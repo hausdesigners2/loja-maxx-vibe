@@ -80,9 +80,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
       void resolve(session?.user?.id ?? null);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       hydrated.current = false;
-      setItems([]);
+      
+      // Se o evento for SIGNED_OUT (logout), limpamos o carrinho de visitante e o estado atual
+      if (event === "SIGNED_OUT") {
+        try {
+          localStorage.removeItem(GUEST_KEY);
+        } catch {}
+        setItems([]);
+      } else {
+        setItems([]);
+      }
+      
       setTimeout(() => { void resolve(session?.user?.id ?? null); }, 0);
     });
 
