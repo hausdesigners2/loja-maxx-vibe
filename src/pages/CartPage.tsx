@@ -59,9 +59,11 @@ export default function CartPage() {
       // Exibe a notificação de sucesso na tela
       toast.success("Pedido Enviado!");
       
-      clear();
       setSubmitted(true);
-      window.setTimeout(() => navigate("/"), 2000);
+      clear(); // Limpa o carrinho no estado e localStorage
+      
+      // Aguarda 5 segundos antes de retornar para a página inicial
+      window.setTimeout(() => navigate("/"), 5000);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Falha ao registrar pedido";
       toast.error(msg);
@@ -69,7 +71,8 @@ export default function CartPage() {
     }
   };
 
-  if (items.length === 0) {
+  // Só exibe a tela de carrinho vazio se o pedido NÃO tiver sido enviado com sucesso
+  if (items.length === 0 && !submitted) {
     return (
       <AppShell>
         <div className="flex flex-col items-center gap-4 py-16 text-center">
@@ -104,15 +107,15 @@ export default function CartPage() {
                 <div className="flex flex-1 flex-col justify-between">
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="line-clamp-2 text-sm font-medium">{it.name}</h3>
-                    <button onClick={() => remove(it.id)} className="text-muted-foreground hover:text-destructive">
+                    <button onClick={() => remove(it.id)} className="text-muted-foreground hover:text-destructive" disabled={submitted}>
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <button onClick={() => setQty(it.id, it.quantity - 1)} className="grid h-7 w-7 place-items-center rounded-full bg-secondary"><Minus className="h-3 w-3" /></button>
+                      <button onClick={() => setQty(it.id, it.quantity - 1)} className="grid h-7 w-7 place-items-center rounded-full bg-secondary" disabled={submitted}><Minus className="h-3 w-3" /></button>
                       <span className="w-5 text-center text-sm font-bold">{it.quantity}</span>
-                      <button onClick={() => setQty(it.id, it.quantity + 1)} className="grid h-7 w-7 place-items-center rounded-full bg-secondary"><Plus className="h-3 w-3" /></button>
+                      <button onClick={() => setQty(it.id, it.quantity + 1)} className="grid h-7 w-7 place-items-center rounded-full bg-secondary" disabled={submitted}><Plus className="h-3 w-3" /></button>
                     </div>
                     <span className="text-sm font-extrabold text-primary">{formatBRL(price * it.quantity)}</span>
                   </div>
@@ -122,7 +125,9 @@ export default function CartPage() {
           })}
         </div>
 
-        <button onClick={clear} className="text-xs text-muted-foreground underline">Esvaziar carrinho</button>
+        {!submitted && (
+          <button onClick={clear} className="text-xs text-muted-foreground underline">Esvaziar carrinho</button>
+        )}
 
         {/* Auth gate */}
         {!authLoading && !user && (
@@ -145,7 +150,7 @@ export default function CartPage() {
           <div className="rounded-2xl bg-card p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold">Dados de entrega</h2>
-              <Button asChild size="sm" variant="outline">
+              <Button asChild size="sm" variant="outline" disabled={submitted}>
                 <Link to="/conta"><Pencil className="mr-1 h-3 w-3" /> Editar</Link>
               </Button>
             </div>
@@ -179,6 +184,7 @@ export default function CartPage() {
                 <button
                   key={m}
                   type="button"
+                  disabled={submitted}
                   onClick={() => setPaymentMethod(m)}
                   className={`h-10 rounded-lg border text-sm font-semibold transition ${
                     paymentMethod === m
@@ -196,6 +202,7 @@ export default function CartPage() {
                 <input
                   type="text"
                   inputMode="decimal"
+                  disabled={submitted}
                   value={changeFor}
                   onChange={(e) => setChangeFor(e.target.value)}
                   placeholder="Ex: 50,00"
@@ -207,6 +214,7 @@ export default function CartPage() {
               <Label className="text-xs text-muted-foreground">Observações (opcional)</Label>
               <textarea
                 value={notes}
+                disabled={submitted}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
                 placeholder="Ex: sem cebola, entregar à tarde..."
@@ -228,14 +236,14 @@ export default function CartPage() {
               disabled={submitting || submitted || !profileComplete}
               className="h-14 w-full gradient-primary text-base font-bold shadow-glow"
             >
-              {submitted ? "Pedido Enviado com Sucesso!" : submitting ? "Processando..." : "Finalizar e Enviar"}
+              {submitted ? "Pedido Enviado" : submitting ? "Processando..." : "Finalizar e Enviar"}
             </Button>
           ) : (
             <Button asChild size="lg" className="h-14 w-full gradient-primary text-base font-bold shadow-glow">
               <Link to="/auth">Entrar para finalizar</Link>
             </Button>
           )}
-          <Button asChild size="lg" variant="outline" className="h-12 w-full text-sm font-semibold">
+          <Button asChild size="lg" variant="outline" className="h-12 w-full text-sm font-semibold" disabled={submitting}>
             <Link to="/">Continuar comprando</Link>
           </Button>
           <p className="text-center text-[11px] text-muted-foreground">Seu pedido será enviado para o lojista e ficará disponível em Meus pedidos.</p>
