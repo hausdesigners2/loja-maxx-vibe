@@ -55,6 +55,10 @@ export default function CartPage() {
         change_for: changeNum && !Number.isNaN(changeNum) ? changeNum : null,
         notes: notes.trim() || null,
       });
+      
+      // Exibe a notificação de sucesso na tela
+      toast.success("Pedido Enviado!");
+      
       clear();
       setSubmitted(true);
       window.setTimeout(() => navigate("/"), 2000);
