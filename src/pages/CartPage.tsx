@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Minus, Plus, Trash2, ShoppingBag, UserIcon, Pencil } from "lucide-react";
+import { Minus, Plus, Trash2, ShoppingBag, UserIcon, Pencil, CheckCircle2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -71,8 +71,28 @@ export default function CartPage() {
     }
   };
 
+  // Exibe a tela de sucesso personalizada quando o pedido for enviado
+  if (submitted) {
+    return (
+      <AppShell>
+        <div className="flex flex-col items-center gap-4 py-16 text-center animate-fade-in">
+          <div className="grid h-20 w-20 place-items-center rounded-full bg-primary/10 text-primary">
+            <CheckCircle2 className="h-10 w-10" />
+          </div>
+          <div>
+            <h2 className="text-xl font-extrabold text-foreground">Pedido Enviado com Sucesso</h2>
+            <p className="text-sm text-muted-foreground mt-1">Agradecimento por sua preferência!</p>
+          </div>
+          <Button asChild className="gradient-primary shadow-glow mt-2">
+            <Link to="/">Voltar ao início</Link>
+          </Button>
+        </div>
+      </AppShell>
+    );
+  }
+
   // Só exibe a tela de carrinho vazio se o pedido NÃO tiver sido enviado com sucesso
-  if (items.length === 0 && !submitted) {
+  if (items.length === 0) {
     return (
       <AppShell>
         <div className="flex flex-col items-center gap-4 py-16 text-center">
