@@ -69,8 +69,18 @@ export default function AccountPage() {
         .select("id, created_at, total, status, order_number")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
-        .limit(20);
-      setOrders((ord ?? []) as OrderRow[]);
+        .limit(50);
+
+      // Filtra os pedidos para exibir apenas os criados nos últimos 10 dias
+      const tenDaysAgo = new Date();
+      tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+      
+      const filteredOrders = (ord ?? []).filter((o) => {
+        const orderDate = new Date(o.created_at);
+        return orderDate >= tenDaysAgo;
+      });
+
+      setOrders(filteredOrders as OrderRow[]);
     })();
   }, [user]);
 
@@ -166,7 +176,7 @@ export default function AccountPage() {
 
         {orders.length > 0 && (
           <div className="rounded-2xl bg-card p-4 space-y-2">
-            <h2 className="text-sm font-bold flex items-center gap-2"><Package className="h-4 w-4" /> Meus pedidos</h2>
+            <h2 className="text-sm font-bold flex items-center gap-2"><Package className="h-4 w-4" /> Meus pedidos (últimos 10 dias)</h2>
             {orders.map((o) => (
               <button
                 type="button"
