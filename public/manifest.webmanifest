@@ -1,15 +1,38 @@
 {
   "name": "Lojas Maxx",
   "short_name": "Lojas Maxx",
-  "description": "Lojas Maxx — Mercado online com entrega rápida",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f0f0f",
   "theme_color": "#0f0f0f",
+  "description": "Lojas Maxx: mercado online com entrega rápida.",
   "icons": [
-    { "src": "/icon-192.png?v=3", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-512.png?v=3", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icon-192.png?v=3", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
-    { "src": "/icon-512.png?v=3", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "/favicon-16x16.png?v=4",
+      "sizes": "16x16",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-32x32.png?v=4",
+      "sizes": "32x32",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-48.png?v=4",
+      "sizes": "48x48",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-192.png?v=4",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/android-chrome-512x512.png?v=4",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ]
 }
