@@ -91,19 +91,21 @@ export default function CartPage() {
     );
   }
 
-  // Só exibe a tela de carrinho vazio se o pedido NÃO tiver sido enviado com sucesso
+  // Exibe a tela com os textos solicitados quando o carrinho estiver vazio
   if (items.length === 0) {
     return (
       <AppShell>
         <div className="flex flex-col items-center gap-4 py-16 text-center">
           <div className="grid h-20 w-20 place-items-center rounded-full bg-secondary">
-            <ShoppingBag className="h-10 w-10 text-muted-foreground" />
+            <CheckCircle2 className="h-10 w-10 text-primary" />
           </div>
           <div>
-            <h2 className="text-lg font-bold">Seu carrinho está vazio</h2>
-            <p className="text-sm text-muted-foreground">Adicione produtos para continuar.</p>
+            <h2 className="text-xl font-extrabold text-foreground">Pedido Enviado com Sucesso</h2>
+            <p className="text-sm text-muted-foreground mt-1">Agradecimento por sua preferência!</p>
           </div>
-          <Button asChild className="gradient-primary"><Link to="/">Explorar produtos</Link></Button>
+          <Button asChild className="gradient-primary shadow-glow mt-2">
+            <Link to="/">Voltar ao início</Link>
+          </Button>
         </div>
       </AppShell>
     );
