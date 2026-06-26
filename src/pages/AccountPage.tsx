@@ -29,8 +29,13 @@ const paymentLabel = (m: string | null) => {
   return m ? (map[m] ?? m) : "—";
 };
 
-const customerStatusLabel = (s: string) =>
-  s === "delivered" || s === "completed" ? "Entregue" : "Em preparação";
+const customerStatusLabel = (s: string) => {
+  if (s === "delivered" || s === "completed") return "Entregue";
+  if (s === "paid") return "Pedido confirmado";
+  if (s === "cancelled") return "Cancelado";
+  if (s === "awaiting_machine") return "Aguardando maquininha";
+  return "Pendente";
+};
 
 interface Profile {
   full_name: string;
@@ -56,7 +61,8 @@ export default function AccountPage() {
 
   useEffect(() => {
     if (!user) return;
-    (async () => {
+
+    const fetchOrdersAndProfile = async () => {
       const { data } = await supabase
         .from("customer_profiles")
         .select("full_name, phone, address, complement, city, state, zip")
@@ -81,8 +87,41 @@ export default function AccountPage() {
       });
 
       setOrders(filteredOrders as OrderRow[]);
-    })();
+    };
+
+    fetchOrdersAndProfile();
+
+    // Sincronização em tempo real com Supabase Realtime
+    const channel = supabase
+      .channel(`user-orders-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "orders",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          fetchOrdersAndProfile();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
+
+  // Mantém o modal de detalhes do pedido atualizado em tempo real
+  useEffect(() => {
+    if (selectedOrder && orders.length > 0) {
+      const updated = orders.find((o) => o.id === selectedOrder.id);
+      if (updated && updated.status !== selectedOrder.status) {
+        setSelectedOrder((prev) => (prev ? { ...prev, status: updated.status } : null));
+      }
+    }
+  }, [orders, selectedOrder]);
 
   const openOrder = async (id: string) => {
     if (!user) return;
@@ -154,24 +193,24 @@ export default function AccountPage() {
             </div>
           </div>
         ) : (
-        <div className="rounded-2xl bg-card p-4 space-y-3">
-          <h2 className="text-sm font-bold">Meus dados</h2>
-          <Field label="Nome completo" v={profile.full_name} on={(v) => setProfile({ ...profile, full_name: v })} />
-          <Field label="Telefone (WhatsApp)" v={profile.phone} on={(v) => setProfile({ ...profile, phone: v })} placeholder="(11) 99999-9999" />
-          <Field label="Endereço" v={profile.address} on={(v) => setProfile({ ...profile, address: v })} placeholder="Rua, número, bairro" />
-          <Field label="Complemento" v={profile.complement} on={(v) => setProfile({ ...profile, complement: v })} placeholder="Apto, casa..." />
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Cidade" v={profile.city} on={(v) => setProfile({ ...profile, city: v })} />
-            <Field label="UF" v={profile.state} on={(v) => setProfile({ ...profile, state: v })} />
+          <div className="rounded-2xl bg-card p-4 space-y-3">
+            <h2 className="text-sm font-bold">Meus dados</h2>
+            <Field label="Nome completo" v={profile.full_name} on={(v) => setProfile({ ...profile, full_name: v })} />
+            <Field label="Telefone (WhatsApp)" v={profile.phone} on={(v) => setProfile({ ...profile, phone: v })} placeholder="(11) 99999-9999" />
+            <Field label="Endereço" v={profile.address} on={(v) => setProfile({ ...profile, address: v })} placeholder="Rua, número, bairro" />
+            <Field label="Complemento" v={profile.complement} on={(v) => setProfile({ ...profile, complement: v })} placeholder="Apto, casa..." />
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Cidade" v={profile.city} on={(v) => setProfile({ ...profile, city: v })} />
+              <Field label="UF" v={profile.state} on={(v) => setProfile({ ...profile, state: v })} />
+            </div>
+            <Field label="CEP" v={profile.zip} on={(v) => setProfile({ ...profile, zip: v })} />
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setEditing(false)} className="flex-1">Cancelar</Button>
+              <Button onClick={save} disabled={saving} className="flex-1 gradient-primary">
+                <Save className="mr-2 h-4 w-4" /> {saving ? "Salvando..." : "Salvar"}
+              </Button>
+            </div>
           </div>
-          <Field label="CEP" v={profile.zip} on={(v) => setProfile({ ...profile, zip: v })} />
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setEditing(false)} className="flex-1">Cancelar</Button>
-            <Button onClick={save} disabled={saving} className="flex-1 gradient-primary">
-              <Save className="mr-2 h-4 w-4" /> {saving ? "Salvando..." : "Salvar"}
-            </Button>
-          </div>
-        </div>
         )}
 
         {orders.length > 0 && (
@@ -234,7 +273,7 @@ export default function AccountPage() {
                 <p><span className="text-muted-foreground">Pagamento:</span> <span className="font-medium">{paymentLabel(selectedOrder.payment_method)}{selectedOrder.payment_method === "cash" && selectedOrder.change_for ? ` (troco p/ ${formatBRL(Number(selectedOrder.change_for))})` : ""}</span></p>
               </div>
               <div className="rounded-lg border border-border p-3 space-y-1">
-                <div className="text-xs font-bold uppercase text-muted-foreground">Cliente</div>
+                <div className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Cliente</div>
                 <p className="font-medium">{selectedOrder.customer_name || "—"}</p>
                 <p className="text-muted-foreground">{selectedOrder.customer_phone || "—"}</p>
                 <p className="text-muted-foreground">
@@ -245,7 +284,7 @@ export default function AccountPage() {
                 </p>
               </div>
               <div className="space-y-2">
-                <div className="text-xs font-bold uppercase text-muted-foreground">Produtos</div>
+                <div className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Produtos</div>
                 {selectedItems.map((it) => {
                   const unit = finalPrice(Number(it.unit_price), it.discount_percent || 0);
                   return (
