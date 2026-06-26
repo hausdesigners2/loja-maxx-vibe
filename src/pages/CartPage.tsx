@@ -239,7 +239,7 @@ export default function CartPage() {
                 disabled={submitted}
                 onChange={(e) => setNotes(e.target.value)}
                 rows={2}
-                placeholder="Ex: sem cebola, entregar à tarde..."
+                placeholder="Ex: entregar à tarde"
                 className="mt-1 w-full rounded-lg border border-border bg-background p-2 text-sm"
               />
             </div>
