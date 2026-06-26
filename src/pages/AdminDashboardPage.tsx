@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { formatBRL } from "@/lib/format";
 import { toast } from "sonner";
 import { printOrder } from "@/lib/printOrder";
+import { OrderCard } from "@/components/OrderCard";
 
 interface Customer {
   id: string;
