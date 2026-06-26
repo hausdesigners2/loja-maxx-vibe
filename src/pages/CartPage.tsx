@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Minus, Plus, Trash2, ShoppingBag, UserIcon, Pencil, CheckCircle2 } from "lucide-react";
+import { Minus, Plus, Trash2, ShoppingBag, UserIcon, Pencil, CheckCircle2, ShoppingCart } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -44,7 +44,7 @@ export default function CartPage() {
   const profileComplete = !!(profile?.full_name?.trim() && profile?.phone?.trim() && profile?.address?.trim());
 
   const checkout = async () => {
-    if (!user || !profile || !profileComplete) return;
+    if (!user || !profile || !profileComplete || items.length === 0) return;
     setSubmitting(true);
     try {
       const customer: CustomerInfo = { ...profile, payment_method: paymentMethod };
@@ -71,7 +71,7 @@ export default function CartPage() {
     }
   };
 
-  // Exibe a tela de sucesso personalizada quando o pedido for enviado
+  // 1. Exibe a tela de sucesso personalizada APENAS quando o pedido for enviado com sucesso nesta sessão
   if (submitted) {
     return (
       <AppShell>
@@ -91,20 +91,20 @@ export default function CartPage() {
     );
   }
 
-  // Exibe a tela com os textos solicitados quando o carrinho estiver vazio
+  // 2. Exibe a tela de carrinho vazio se não houver itens e não tiver acabado de enviar um pedido
   if (items.length === 0) {
     return (
       <AppShell>
-        <div className="flex flex-col items-center gap-4 py-16 text-center">
-          <div className="grid h-20 w-20 place-items-center rounded-full bg-secondary">
-            <CheckCircle2 className="h-10 w-10 text-primary" />
+        <div className="flex flex-col items-center gap-4 py-16 text-center animate-fade-in">
+          <div className="grid h-20 w-20 place-items-center rounded-full bg-secondary text-muted-foreground">
+            <ShoppingCart className="h-10 w-10" />
           </div>
           <div>
-            <h2 className="text-xl font-extrabold text-foreground">Pedido Enviado com Sucesso</h2>
-            <p className="text-sm text-muted-foreground mt-1">Agradecimento por sua preferência!</p>
+            <h2 className="text-xl font-extrabold text-foreground">Seu carrinho está vazio</h2>
+            <p className="text-sm text-muted-foreground mt-1">Adicione produtos para continuar sua compra.</p>
           </div>
           <Button asChild className="gradient-primary shadow-glow mt-2">
-            <Link to="/">Voltar ao início</Link>
+            <Link to="/">Continuar comprando</Link>
           </Button>
         </div>
       </AppShell>
