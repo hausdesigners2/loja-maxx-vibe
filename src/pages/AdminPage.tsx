@@ -159,6 +159,11 @@ export default function AdminPage() {
     reload();
   };
 
+  // Filtra apenas categorias que possuem UUIDs válidos (ou seja, que existem no banco de dados)
+  const validCategories = useMemo(() => {
+    return categories.filter(c => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(c.id));
+  }, [categories]);
+
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-background">
@@ -301,7 +306,7 @@ export default function AdminPage() {
               <Select value={form.category_id} onValueChange={(v) => setForm({ ...form, category_id: v })}>
                 <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                 <SelectContent>
-                  {categories.map((c) => (
+                  {validCategories.map((c) => (
                     <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>
                   ))}
                 </SelectContent>

@@ -16,6 +16,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const infinitepayApiKey = Deno.env.get("INFINITEPAY_API_KEY") ?? "test_api_key"; // Chave configurada no painel do Supabase
+    const infinitepayHandle = Deno.env.get("INFINITEPAY_HANDLE") ?? "loja_maxx"; // Novo segredo configurado
 
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -92,7 +93,7 @@ serve(async (req) => {
       
       checkoutData = {
         id: mockPaymentId,
-        checkout_url: `https://checkout.infinitepay.io/loja_maxx/${mockPaymentId}`,
+        checkout_url: `https://checkout.infinitepay.io/${infinitepayHandle}/${mockPaymentId}`,
         pix: {
           qrcode: mockPixCode,
           qrcode_image_url: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(mockPixCode)}`
