@@ -45,8 +45,8 @@ serve(async (req) => {
     const totalCents = Math.round(Number(order.total) * 100);
 
     // Prepara a chamada para a API de Checkout da InfinitePay
-    // Documentação oficial: POST https://api.infinitepay.io/v1/checkouts
-    const infinitePayUrl = "https://api.infinitepay.io/v1/checkouts";
+    // Nova URL oficial atualizada conforme as diretrizes de migração
+    const infinitePayUrl = "https://api.checkout.infinitepay.io/links";
     
     const payload = {
       amount: totalCents,
