@@ -6,6 +6,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Função auxiliar para calcular o preço final com desconto em centavos inteiros sem erros de arredondamento
+function getFinalPriceCents(price: number, discountPercent: number): number {
+  const discount = discountPercent || 0;
+  const finalPrice = Math.max(0, price * (1 - discount / 100));
+  return Math.round(finalPrice * 100);
+}
+
 serve(async (req) => {
   // Trata requisições OPTIONS (CORS)
   if (req.method === 'OPTIONS') {
@@ -15,8 +22,8 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const infinitepayApiKey = Deno.env.get("INFINITEPAY_API_KEY") ?? "test_api_key"; // Chave configurada no painel do Supabase
-    const infinitepayHandle = Deno.env.get("INFINITEPAY_HANDLE") ?? "loja_maxx"; // Novo segredo configurado
+    const infinitepayApiKey = Deno.env.get("INFINITEPAY_API_KEY") ?? "test_api_key";
+    const infinitepayHandle = Deno.env.get("INFINITEPAY_HANDLE") ?? "loja_maxx";
 
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
@@ -43,20 +50,29 @@ serve(async (req) => {
       });
     }
 
-    const totalCents = Math.round(Number(order.total) * 100);
+    // Mapeia os itens calculando o valor unitário final com desconto diretamente em centavos inteiros
+    const items = order.order_items.map((item: any) => {
+      const unitAmountCents = getFinalPriceCents(
+        Number(item.unit_price),
+        Number(item.discount_percent || 0)
+      );
+      return {
+        name: item.product_name,
+        quantity: item.quantity,
+        unit_amount: unitAmountCents
+      };
+    });
+
+    // Calcula o total geral estritamente como a soma dos itens em centavos para evitar qualquer divergência de dízima periódica
+    const totalCents = items.reduce((sum: number, item: any) => sum + (item.unit_amount * item.quantity), 0);
 
     // Prepara a chamada para a API de Checkout da InfinitePay
-    // Nova URL oficial atualizada conforme as diretrizes de migração
     const infinitePayUrl = "https://api.checkout.infinitepay.io/links";
     
     const payload = {
       amount: totalCents,
       payment_methods: ["pix"],
-      items: order.order_items.map((item: any) => ({
-        name: item.product_name,
-        quantity: item.quantity,
-        unit_amount: Math.round(Number(item.unit_price) * 100)
-      })),
+      items: items,
       metadata: {
         order_id: order.id,
         order_number: order.order_number
@@ -89,7 +105,7 @@ serve(async (req) => {
       
       // Fallback seguro/mock realista caso a API Key real ainda não esteja configurada
       const mockPaymentId = `inf_${crypto.randomUUID().replace(/-/g, "")}`;
-      const mockPixCode = `00020101021226850014br.gov.bcb.pix2563pix.infinitepay.io/qr/v2/${mockPaymentId}5204000053039865405${order.total}5802BR5910Lojas Maxx6009Sao Paulo62070503***6304A1B2`;
+      const mockPixCode = `00020101021226850014br.gov.bcb.pix2563pix.infinitepay.io/qr/v2/${mockPaymentId}5204000053039865405${(totalCents / 100).toFixed(2)}5802BR5910Lojas Maxx6009Sao Paulo62070503***6304A1B2`;
       
       checkoutData = {
         id: mockPaymentId,
