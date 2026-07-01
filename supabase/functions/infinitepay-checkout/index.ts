@@ -13,22 +13,6 @@ function getFinalPriceCents(price: number, discountPercent: number): number {
   return Math.round(finalPrice * 100);
 }
 
-// Função auxiliar para gerar dados de checkout simulados (mock) realistas
-function getMockCheckoutData(infinitepayHandle: string, totalCents: number) {
-  const mockPaymentId = `inf_${crypto.randomUUID().replace(/-/g, "")}`;
-  const mockPixCode = `00020101021226850014br.gov.bcb.pix2563pix.infinitepay.io/qr/v2/${mockPaymentId}5204000053039865405${(totalCents / 100).toFixed(2)}5802BR5910Lojas Maxx6009Sao Paulo62070503***6304A1B2`;
-  
-  return {
-    id: mockPaymentId,
-    checkout_url: `https://checkout.infinitepay.io/${infinitepayHandle}/${mockPaymentId}`,
-    pix: {
-      qrcode: mockPixCode,
-      qrcode_image_url: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(mockPixCode)}`
-    },
-    expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString()
-  };
-}
-
 serve(async (req) => {
   // Trata requisições OPTIONS (CORS)
   if (req.method === 'OPTIONS') {
@@ -38,14 +22,25 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const infinitepayApiKey = Deno.env.get("INFINITEPAY_API_KEY");
-    const infinitepayHandle = Deno.env.get("INFINITEPAY_HANDLE") ?? "loja_maxx";
+    const infinitepayHandle = Deno.env.get("INFINITEPAY_HANDLE");
+
+    // Log de confirmação de carregamento do Secret (sem mostrar o valor)
+    if (infinitepayHandle) {
+      console.log("[infinitepay-checkout] Secret INFINITEPAY_HANDLE carregado com sucesso.");
+    } else {
+      console.error("[infinitepay-checkout] Erro: Secret INFINITEPAY_HANDLE não configurado no Supabase.");
+      return new Response(JSON.stringify({ error: "INFINITEPAY_HANDLE não configurado" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
 
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // Recupera o corpo da requisição
     const { order_id } = await req.json();
     if (!order_id) {
+      console.error("[infinitepay-checkout] Erro: order_id é obrigatório.");
       return new Response(JSON.stringify({ error: "order_id é obrigatório" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -60,6 +55,7 @@ serve(async (req) => {
       .single();
 
     if (orderError || !order) {
+      console.error("[infinitepay-checkout] Erro ao buscar pedido no banco:", orderError);
       return new Response(JSON.stringify({ error: "Pedido não encontrado" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -73,89 +69,99 @@ serve(async (req) => {
         Number(item.discount_percent || 0)
       );
       return {
-        name: item.product_name,
-        quantity: item.quantity,
-        unit_amount: unitAmountCents
+        description: item.product_name.slice(0, 100), // Limita tamanho da descrição conforme boas práticas
+        price: unitAmountCents,
+        quantity: item.quantity
       };
     });
 
-    // Calcula o total geral estritamente como a soma dos itens em centavos para evitar qualquer divergência de dízima periódica
-    const totalCents = items.reduce((sum: number, item: any) => sum + (item.unit_amount * item.quantity), 0);
+    // O order_nsu deve ser o ID único do pedido (UUID) para garantir unicidade absoluta na InfinitePay
+    const order_nsu = order.id;
 
-    // Prepara a chamada para a API de Checkout da InfinitePay
+    // Prepara a chamada para a API oficial de Checkout da InfinitePay
     const infinitePayUrl = "https://api.checkout.infinitepay.io/links";
     
     const payload = {
-      amount: totalCents,
-      payment_methods: ["pix"],
+      handle: infinitepayHandle,
+      order_nsu: order_nsu,
       items: items,
-      metadata: {
-        order_id: order.id,
-        order_number: order.order_number
-      },
-      callback_url: `${supabaseUrl}/functions/v1/infinitepay-webhook`,
-      redirect_url: `${req.headers.get("origin") || "https://lojasmaxx.com"}/conta`
+      redirect_url: `${req.headers.get("origin") || "https://lojasmaxx.com"}/conta`,
+      webhook_url: `${supabaseUrl}/functions/v1/infinitepay-webhook`
     };
 
-    console.log("[infinitepay-checkout] Enviando payload para InfinitePay:", JSON.stringify(payload));
+    console.log("[infinitepay-checkout] Enviando payload oficial para InfinitePay:", JSON.stringify(payload));
 
-    let checkoutData;
-    
-    // Se a chave de API estiver configurada, tenta realizar a chamada real
-    if (infinitepayApiKey && infinitepayApiKey !== "test_api_key") {
-      try {
-        const response = await fetch(infinitePayUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${infinitepayApiKey}`
-          },
-          body: JSON.stringify(payload)
-        });
+    const response = await fetch(infinitePayUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
 
-        if (!response.ok) {
-          const errText = await response.text();
-          console.warn(`[infinitepay-checkout] Erro na API da InfinitePay (${response.status}): ${errText}`);
-          throw new Error(`Erro na API da InfinitePay: ${response.status} - ${errText}`);
-        }
+    console.log("[infinitepay-checkout] Código HTTP retornado pela InfinitePay:", response.status);
 
-        checkoutData = await response.json();
-      } catch (err) {
-        console.error("[infinitepay-checkout] Falha na requisição real da InfinitePay, usando mock:", err.message);
-        checkoutData = getMockCheckoutData(infinitepayHandle, totalCents);
-      }
-    } else {
-      console.log("[infinitepay-checkout] INFINITEPAY_API_KEY não configurada ou inválida. Usando mock para demonstração.");
-      checkoutData = getMockCheckoutData(infinitepayHandle, totalCents);
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error(`[infinitepay-checkout] Erro retornado pela API da InfinitePay (${response.status}): ${errText}`);
+      return new Response(JSON.stringify({ error: `Erro na InfinitePay: ${errText}` }), {
+        status: response.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
     }
 
-    // Atualiza o pedido no Supabase com as informações do Pix/Checkout
-    const pixCode = checkoutData.pix?.qrcode || checkoutData.pix_code || "";
-    const qrCodeUrl = checkoutData.pix?.qrcode_image_url || `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixCode)}`;
+    const checkoutData = await response.json();
+    console.log("[infinitepay-checkout] Resposta completa da InfinitePay:", JSON.stringify(checkoutData));
 
-    // Removida a coluna 'expires_at' para evitar o erro PGRST204 (coluna inexistente no banco)
-    const { error: updateError } = await supabaseClient
-      .from("orders")
-      .update({
-        payment_id: checkoutData.id,
-        pix_code: pixCode,
-        qr_code_url: qrCodeUrl,
-        payment_status: "pending"
-      })
-      .eq("id", order.id);
+    const checkoutUrl = checkoutData.url;
+    if (!checkoutUrl) {
+      console.error("[infinitepay-checkout] Erro: URL de checkout não retornada pela InfinitePay.");
+      return new Response(JSON.stringify({ error: "URL de checkout não retornada pela InfinitePay" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
 
-    if (updateError) {
-      console.error("[infinitepay-checkout] Erro ao atualizar pedido no Supabase:", updateError);
+    // Atualiza o pedido no Supabase de forma segura contra erros PGRST204 (colunas ausentes)
+    // Tenta atualizar com checkout_url se a coluna existir, caso contrário atualiza apenas as colunas básicas
+    try {
+      const { error: updateError } = await supabaseClient
+        .from("orders")
+        .update({
+          payment_id: order_nsu,
+          payment_status: "pending",
+          checkout_url: checkoutUrl
+        } as any)
+        .eq("id", order.id);
+
+      if (updateError) {
+        if (updateError.code === "PGRST204") {
+          console.log("[infinitepay-checkout] Coluna checkout_url não existe no banco. Atualizando apenas payment_id e payment_status.");
+          const { error: fallbackError } = await supabaseClient
+            .from("orders")
+            .update({
+              payment_id: order_nsu,
+              payment_status: "pending"
+            } as any)
+            .eq("id", order.id);
+          
+          if (fallbackError) {
+            console.error("[infinitepay-checkout] Erro no update de fallback:", fallbackError);
+          }
+        } else {
+          console.error("[infinitepay-checkout] Erro ao atualizar pedido no Supabase:", updateError);
+        }
+      } else {
+        console.log("[infinitepay-checkout] Pedido atualizado com sucesso no Supabase.");
+      }
+    } catch (dbErr) {
+      console.error("[infinitepay-checkout] Exceção ao atualizar banco de dados:", dbErr);
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        checkout_url: checkoutData.checkout_url,
-        pix_code: pixCode,
-        qr_code_url: qrCodeUrl,
-        expires_at: checkoutData.expires_at || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-        payment_id: checkoutData.id
+        checkout_url: checkoutUrl
       }),
       {
         status: 200,
@@ -164,7 +170,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error("[infinitepay-checkout] Erro geral:", error);
+    console.error("[infinitepay-checkout] Erro geral na execução da função:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
       {

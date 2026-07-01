@@ -18,33 +18,30 @@ serve(async (req) => {
 
     // Recebe o payload do webhook da InfinitePay
     const payload = await req.json();
-    console.log("[infinitepay-webhook] Recebido payload:", JSON.stringify(payload));
+    console.log("[infinitepay-webhook] Recebido payload oficial:", JSON.stringify(payload));
 
-    // Extrai informações do pagamento
-    // Estrutura típica da InfinitePay: { id, status, amount, metadata: { order_id } } ou similar
-    const paymentId = payload.id || payload.payment_id;
+    // Extrai informações do pagamento conforme a API oficial de Checkout
+    const orderNsu = payload.order_nsu || payload.metadata?.order_id || payload.reference_id;
     const status = payload.status; // "approved", "paid", "expired", "cancelled", etc.
-    const orderId = payload.metadata?.order_id || payload.reference_id;
+    const paymentId = payload.id || payload.payment_id;
 
-    if (!paymentId) {
-      return new Response(JSON.stringify({ error: "payment_id não identificado no payload" }), {
+    if (!orderNsu) {
+      console.error("[infinitepay-webhook] Erro: order_nsu não identificado no payload.");
+      return new Response(JSON.stringify({ error: "order_nsu não identificado no payload" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
-    // Busca o pedido correspondente pelo payment_id ou orderId
-    let query = supabaseClient.from("orders").select("*");
-    if (orderId) {
-      query = query.eq("id", orderId);
-    } else {
-      query = query.eq("payment_id", paymentId);
-    }
-
-    const { data: order, error: orderError } = await query.maybeSingle();
+    // Busca o pedido correspondente pelo order_nsu (que é o ID do pedido) ou pelo payment_id
+    const { data: order, error: orderError } = await supabaseClient
+      .from("orders")
+      .select("*")
+      .or(`id.eq.${orderNsu},payment_id.eq.${paymentId || 'none'}`)
+      .maybeSingle();
 
     if (orderError || !order) {
-      console.warn("[infinitepay-webhook] Pedido não encontrado para o pagamento:", paymentId);
+      console.warn("[infinitepay-webhook] Pedido não encontrado para o order_nsu:", orderNsu);
       return new Response(JSON.stringify({ error: "Pedido não encontrado" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -75,7 +72,7 @@ serve(async (req) => {
 
     if (paymentStatus === "Pago") {
       updatePayload.paid_at = new Date().toISOString();
-      updatePayload.transaction_id = payload.transaction_id || paymentId;
+      updatePayload.transaction_id = paymentId || orderNsu;
     }
 
     const { error: updateError } = await supabaseClient
@@ -84,7 +81,7 @@ serve(async (req) => {
       .eq("id", order.id);
 
     if (updateError) {
-      console.error("[infinitepay-webhook] Erro ao atualizar pedido:", updateError);
+      console.error("[infinitepay-webhook] Erro ao atualizar pedido no Supabase:", updateError);
       return new Response(JSON.stringify({ error: "Erro ao atualizar pedido" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -99,7 +96,7 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error("[infinitepay-webhook] Erro geral:", error);
+    console.error("[infinitepay-webhook] Erro geral no processamento do webhook:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }

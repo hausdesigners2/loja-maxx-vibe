@@ -11,7 +11,6 @@ import { CustomerInfo } from "@/lib/whatsapp";
 import { createOrder } from "@/lib/checkout";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { PixPaymentModal } from "@/components/PixPaymentModal";
 
 const PAYMENT_METHODS = ["Pix", "Débito", "Crédito", "Dinheiro"] as const;
 
@@ -26,15 +25,6 @@ export default function CartPage() {
   const [notes, setNotes] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  
-  // Pix States
-  const [showPixModal, setShowPixModal] = useState(false);
-  const [pixCode, setPixCode] = useState("");
-  const [qrCodeUrl, setQrCodeUrl] = useState("");
-  const [expiresAt, setExpiresAt] = useState("");
-  const [checkoutUrl, setCheckoutUrl] = useState("");
-  const [currentOrderId, setCurrentOrderId] = useState("");
-  const [paymentStatus, setPaymentStatus] = useState("pending");
 
   const total = items.reduce((s, it) => s + finalPrice(it.price, it.discount_percent) * it.quantity, 0);
 
@@ -52,67 +42,26 @@ export default function CartPage() {
     })();
   }, [user]);
 
-  // Escuta atualizações em tempo real do status do pedido
-  useEffect(() => {
-    if (!currentOrderId) return;
-
-    const channel = supabase
-      .channel(`order-status-${currentOrderId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "orders",
-          filter: `id=eq.${currentOrderId}`
-        },
-        (payload) => {
-          console.log("[CartPage] Pedido atualizado em tempo real:", payload.new);
-          const newStatus = payload.new.status;
-          const newPaymentStatus = payload.new.payment_status;
-
-          if (newPaymentStatus) {
-            setPaymentStatus(newPaymentStatus);
-          }
-
-          if (newStatus === "paid" || newPaymentStatus === "Pago") {
-            toast.success("Pagamento aprovado com sucesso!");
-            setPaymentStatus("Pago");
-            setTimeout(() => {
-              setShowPixModal(false);
-              setSubmitted(true);
-              clear();
-            }, 2000);
-          }
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [currentOrderId]);
-
   const profileComplete = !!(profile?.full_name?.trim() && profile?.phone?.trim() && profile?.address?.trim());
 
-  const generatePix = async (orderId: string) => {
+  const generateCheckoutUrl = async (orderId: string) => {
     try {
       const { data, error } = await supabase.functions.invoke("infinitepay-checkout", {
         body: { order_id: orderId }
       });
 
-      if (error || !data) {
-        throw error || new Error("Falha ao gerar Pix na InfinitePay");
+      if (error || !data || !data.checkout_url) {
+        throw error || new Error("Falha ao gerar link de pagamento na InfinitePay");
       }
 
-      setPixCode(data.pix_code);
-      setQrCodeUrl(data.qr_code_url);
-      setExpiresAt(data.expires_at);
-      setCheckoutUrl(data.checkout_url);
-      setShowPixModal(true);
+      toast.success("Redirecionando para o pagamento seguro...");
+      // Limpa o carrinho antes de redirecionar para que o usuário não volte com itens no carrinho
+      clear();
+      // Redireciona para a URL do Checkout oficial da InfinitePay
+      window.location.href = data.checkout_url;
     } catch (err) {
-      console.error("[CartPage] Erro ao gerar Pix:", err);
-      toast.error("Não foi possível gerar o QR Code Pix. Tente novamente.");
+      console.error("[CartPage] Erro ao gerar link de pagamento:", err);
+      toast.error("Não foi possível gerar o link de pagamento. Tente novamente.");
     }
   };
 
@@ -130,10 +79,8 @@ export default function CartPage() {
         notes: notes.trim() || null,
       });
 
-      setCurrentOrderId(order.id);
-
       if (paymentMethod === "Pix") {
-        await generatePix(order.id);
+        await generateCheckoutUrl(order.id);
       } else {
         toast.success("Pedido Enviado!");
         setSubmitted(true);
@@ -348,23 +295,6 @@ export default function CartPage() {
           <p className="text-center text-[11px] text-muted-foreground">Seu pedido será enviado para o lojista e ficará disponível em Meus pedidos.</p>
         </div>
       </div>
-
-      {/* Modal de Pagamento Pix */}
-      <PixPaymentModal
-        isOpen={showPixModal}
-        onClose={() => {
-          setShowPixModal(false);
-          // Redireciona para a conta para que o usuário possa ver o pedido e pagar depois
-          navigate("/conta");
-        }}
-        pixCode={pixCode}
-        qrCodeUrl={qrCodeUrl}
-        expiresAt={expiresAt}
-        total={total}
-        checkoutUrl={checkoutUrl}
-        onRegenerate={() => generatePix(currentOrderId)}
-        paymentStatus={paymentStatus}
-      />
     </AppShell>
   );
 }
