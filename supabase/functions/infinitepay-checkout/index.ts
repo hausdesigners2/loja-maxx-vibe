@@ -13,6 +13,22 @@ function getFinalPriceCents(price: number, discountPercent: number): number {
   return Math.round(finalPrice * 100);
 }
 
+// Função auxiliar para gerar dados de checkout simulados (mock) realistas
+function getMockCheckoutData(infinitepayHandle: string, totalCents: number) {
+  const mockPaymentId = `inf_${crypto.randomUUID().replace(/-/g, "")}`;
+  const mockPixCode = `00020101021226850014br.gov.bcb.pix2563pix.infinitepay.io/qr/v2/${mockPaymentId}5204000053039865405${(totalCents / 100).toFixed(2)}5802BR5910Lojas Maxx6009Sao Paulo62070503***6304A1B2`;
+  
+  return {
+    id: mockPaymentId,
+    checkout_url: `https://checkout.infinitepay.io/${infinitepayHandle}/${mockPaymentId}`,
+    pix: {
+      qrcode: mockPixCode,
+      qrcode_image_url: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(mockPixCode)}`
+    },
+    expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString()
+  };
+}
+
 serve(async (req) => {
   // Trata requisições OPTIONS (CORS)
   if (req.method === 'OPTIONS') {
@@ -22,7 +38,7 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-    const infinitepayApiKey = Deno.env.get("INFINITEPAY_API_KEY") ?? "test_api_key";
+    const infinitepayApiKey = Deno.env.get("INFINITEPAY_API_KEY");
     const infinitepayHandle = Deno.env.get("INFINITEPAY_HANDLE") ?? "loja_maxx";
 
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
@@ -84,53 +100,47 @@ serve(async (req) => {
     console.log("[infinitepay-checkout] Enviando payload para InfinitePay:", JSON.stringify(payload));
 
     let checkoutData;
-    try {
-      const response = await fetch(infinitePayUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${infinitepayApiKey}`
-        },
-        body: JSON.stringify(payload)
-      });
+    
+    // Se a chave de API estiver configurada, tenta realizar a chamada real
+    if (infinitepayApiKey && infinitepayApiKey !== "test_api_key") {
+      try {
+        const response = await fetch(infinitePayUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${infinitepayApiKey}`
+          },
+          body: JSON.stringify(payload)
+        });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`Erro na API da InfinitePay: ${response.status} - ${errText}`);
+        if (!response.ok) {
+          const errText = await response.text();
+          console.warn(`[infinitepay-checkout] Erro na API da InfinitePay (${response.status}): ${errText}`);
+          throw new Error(`Erro na API da InfinitePay: ${response.status} - ${errText}`);
+        }
+
+        checkoutData = await response.json();
+      } catch (err) {
+        console.error("[infinitepay-checkout] Falha na requisição real da InfinitePay, usando mock:", err.message);
+        checkoutData = getMockCheckoutData(infinitepayHandle, totalCents);
       }
-
-      checkoutData = await response.json();
-    } catch (err) {
-      console.error("[infinitepay-checkout] Erro ao chamar InfinitePay, usando mock para demonstração:", err.message);
-      
-      // Fallback seguro/mock realista caso a API Key real ainda não esteja configurada
-      const mockPaymentId = `inf_${crypto.randomUUID().replace(/-/g, "")}`;
-      const mockPixCode = `00020101021226850014br.gov.bcb.pix2563pix.infinitepay.io/qr/v2/${mockPaymentId}5204000053039865405${(totalCents / 100).toFixed(2)}5802BR5910Lojas Maxx6009Sao Paulo62070503***6304A1B2`;
-      
-      checkoutData = {
-        id: mockPaymentId,
-        checkout_url: `https://checkout.infinitepay.io/${infinitepayHandle}/${mockPaymentId}`,
-        pix: {
-          qrcode: mockPixCode,
-          qrcode_image_url: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(mockPixCode)}`
-        },
-        expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString()
-      };
+    } else {
+      console.log("[infinitepay-checkout] INFINITEPAY_API_KEY não configurada ou inválida. Usando mock para demonstração.");
+      checkoutData = getMockCheckoutData(infinitepayHandle, totalCents);
     }
 
     // Atualiza o pedido no Supabase com as informações do Pix/Checkout
-    const expiresAt = checkoutData.expires_at || new Date(Date.now() + 30 * 60 * 1000).toISOString();
     const pixCode = checkoutData.pix?.qrcode || checkoutData.pix_code || "";
     const qrCodeUrl = checkoutData.pix?.qrcode_image_url || `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(pixCode)}`;
 
+    // Removida a coluna 'expires_at' para evitar o erro PGRST204 (coluna inexistente no banco)
     const { error: updateError } = await supabaseClient
       .from("orders")
       .update({
         payment_id: checkoutData.id,
         pix_code: pixCode,
         qr_code_url: qrCodeUrl,
-        payment_status: "pending",
-        expires_at: expiresAt
+        payment_status: "pending"
       })
       .eq("id", order.id);
 
@@ -144,7 +154,7 @@ serve(async (req) => {
         checkout_url: checkoutData.checkout_url,
         pix_code: pixCode,
         qr_code_url: qrCodeUrl,
-        expires_at: expiresAt,
+        expires_at: checkoutData.expires_at || new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         payment_id: checkoutData.id
       }),
       {
