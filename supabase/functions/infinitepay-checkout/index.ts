@@ -12,6 +12,33 @@ function getFinalPriceCents(price: number, discountPercent: number): number {
   return Math.round(finalPrice * 100);
 }
 
+// Função auxiliar para tentar extrair rua e número de um endereço em formato de texto único
+function parseAddress(fullAddress: string) {
+  const addressStr = fullAddress || "";
+  // Tenta encontrar um padrão de "Nome da Rua, Número"
+  const match = addressStr.match(/^([^,]+),\s*(\d+)/);
+  if (match) {
+    return {
+      street: match[1].trim(),
+      number: match[2].trim()
+    };
+  }
+  return {
+    street: addressStr.trim(),
+    number: "S/N"
+  };
+}
+
+// Função auxiliar para formatar o telefone para o padrão esperado (apenas dígitos)
+function formatPhone(phoneStr: string): string {
+  const digits = phoneStr.replace(/\D/g, '');
+  // Se não tiver o DDI (55), adiciona para números brasileiros de 10 ou 11 dígitos
+  if (digits.length === 10 || digits.length === 11) {
+    return '55' + digits;
+  }
+  return digits;
+}
+
 Deno.serve(async (req) => {
   // Trata requisições OPTIONS (CORS)
   if (req.method === 'OPTIONS') {
@@ -61,6 +88,19 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Busca o e-mail do cliente no perfil se houver um user_id associado
+    let customerEmail = "";
+    if (order.user_id) {
+      const { data: profile } = await supabaseClient
+        .from("customer_profiles")
+        .select("email")
+        .eq("user_id", order.user_id)
+        .maybeSingle();
+      if (profile?.email) {
+        customerEmail = profile.email;
+      }
+    }
+
     // Mapeia os itens calculando o valor unitário final com desconto diretamente em centavos inteiros
     const items = order.order_items.map((item: any) => {
       const unitAmountCents = getFinalPriceCents(
@@ -77,6 +117,29 @@ Deno.serve(async (req) => {
     // O order_nsu deve ser o ID único do pedido (UUID) para garantir unicidade absoluta na InfinitePay
     const order_nsu = order.id;
 
+    // Extrai rua e número do endereço completo do pedido
+    const parsedAddr = parseAddress(order.customer_address);
+
+    // Monta os objetos de cliente e endereço para pré-preenchimento
+    const customerPayload: any = {
+      name: order.customer_name,
+      phone: formatPhone(order.customer_phone)
+    };
+    if (customerEmail) {
+      customerPayload.email = customerEmail;
+    }
+
+    const addressPayload: any = {
+      street: parsedAddr.street,
+      number: parsedAddr.number
+    };
+    if (order.customer_zip) {
+      addressPayload.cep = order.customer_zip.replace(/\D/g, '');
+    }
+    if (order.customer_complement) {
+      addressPayload.complement = order.customer_complement;
+    }
+
     // Prepara a chamada para a API oficial de Checkout da InfinitePay
     const infinitePayUrl = "https://api.checkout.infinitepay.io/links";
     
@@ -85,10 +148,12 @@ Deno.serve(async (req) => {
       order_nsu: order_nsu,
       items: items,
       redirect_url: `${req.headers.get("origin") || "https://lojasmaxx.com"}/conta`,
-      webhook_url: `${supabaseUrl}/functions/v1/infinitepay-webhook`
+      webhook_url: `${supabaseUrl}/functions/v1/infinitepay-webhook`,
+      customer: customerPayload,
+      address: addressPayload
     };
 
-    console.log("[infinitepay-checkout] Enviando payload oficial para InfinitePay:", JSON.stringify(payload));
+    console.log("[infinitepay-checkout] Enviando payload oficial com dados do comprador para InfinitePay:", JSON.stringify(payload));
 
     const response = await fetch(infinitePayUrl, {
       method: "POST",
@@ -122,7 +187,6 @@ Deno.serve(async (req) => {
     }
 
     // Atualiza o pedido no Supabase de forma segura contra erros PGRST204 (colunas ausentes)
-    // Tenta atualizar com checkout_url se a coluna existir, caso contrário atualiza apenas as colunas básicas
     try {
       const { error: updateError } = await supabaseClient
         .from("orders")
