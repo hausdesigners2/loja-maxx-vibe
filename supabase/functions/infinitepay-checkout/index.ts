@@ -143,17 +143,22 @@ Deno.serve(async (req) => {
     // Prepara a chamada para a API oficial de Checkout da InfinitePay
     const infinitePayUrl = "https://api.checkout.infinitepay.io/links";
     
+    // Define a URL de redirecionamento dinamicamente com base na origem da requisição,
+    // caindo de volta para o domínio oficial de produção da Loja Maxx (/conta)
+    const origin = req.headers.get("origin") || "https://www.lojasmaxx.com.br";
+    const redirectUrl = `${origin}/conta`;
+
     const payload = {
       handle: infinitepayHandle,
       order_nsu: order_nsu,
       items: items,
-      redirect_url: `${req.headers.get("origin") || "https://lojasmaxx.com"}/conta`,
+      redirect_url: redirectUrl,
       webhook_url: `${supabaseUrl}/functions/v1/infinitepay-webhook`,
       customer: customerPayload,
       address: addressPayload
     };
 
-    console.log("[infinitepay-checkout] Enviando payload oficial com dados do comprador para InfinitePay:", JSON.stringify(payload));
+    console.log("[infinitepay-checkout] Enviando payload oficial com redirect_url configurado para:", redirectUrl);
 
     const response = await fetch(infinitePayUrl, {
       method: "POST",
