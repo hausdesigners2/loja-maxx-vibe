@@ -57,6 +57,10 @@ export default function CartPage() {
       toast.success("Redirecionando para o pagamento seguro...");
       // Limpa o carrinho antes de redirecionar para que o usuário não volte com itens no carrinho
       clear();
+      
+      // Desativa qualquer listener de unload para evitar o aviso de "Sair do site?" do navegador
+      window.onbeforeunload = null;
+      
       // Redireciona para a URL do Checkout oficial da InfinitePay
       window.location.href = data.checkout_url;
     } catch (err) {
