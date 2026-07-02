@@ -101,20 +101,39 @@ serve(async (req) => {
     // Se o status mudou para pago (approved) e o pedido ainda não estava marcado como pago, reduzimos o estoque
     const isNewlyPaid = orderStatus === "paid" && order.status !== "paid";
 
-    // Atualiza o pedido no Supabase
-    const updatePayload: any = {
-      status: orderStatus,
-      payment_status: paymentStatus,
-      updated_at: new Date().toISOString()
-    };
+    // Atualiza o pedido no Supabase de forma resiliente
+    try {
+      const { error: updateError } = await supabaseClient
+        .from("orders")
+        .update({
+          status: orderStatus,
+          payment_status: paymentStatus,
+          updated_at: new Date().toISOString()
+        } as any)
+        .eq("id", order.id);
 
-    const { error: updateError } = await supabaseClient
-      .from("orders")
-      .update(updatePayload)
-      .eq("id", order.id);
-
-    if (updateError) {
-      console.error("[mercadopago-webhook] Erro ao atualizar pedido no Supabase:", updateError);
+      if (updateError) {
+        if (updateError.code === "PGRST204") {
+          console.log("[mercadopago-webhook] Coluna payment_status não existe no banco. Atualizando apenas status.");
+          const { error: fallbackError } = await supabaseClient
+            .from("orders")
+            .update({
+              status: orderStatus,
+              updated_at: new Date().toISOString()
+            } as any)
+            .eq("id", order.id);
+          
+          if (fallbackError) {
+            console.error("[mercadopago-webhook] Erro no update de fallback:", fallbackError);
+            throw fallbackError;
+          }
+        } else {
+          console.error("[mercadopago-webhook] Erro ao atualizar pedido no Supabase:", updateError);
+          throw updateError;
+        }
+      }
+    } catch (dbErr) {
+      console.error("[mercadopago-webhook] Exceção ao atualizar banco de dados:", dbErr);
       return new Response(JSON.stringify({ error: "Erro ao atualizar pedido" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
