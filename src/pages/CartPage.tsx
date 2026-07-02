@@ -44,31 +44,6 @@ export default function CartPage() {
 
   const profileComplete = !!(profile?.full_name?.trim() && profile?.phone?.trim() && profile?.address?.trim());
 
-  const generateCheckoutUrl = async (orderId: string) => {
-    try {
-      const { data, error } = await supabase.functions.invoke("infinitepay-checkout", {
-        body: { order_id: orderId }
-      });
-
-      if (error || !data || !data.checkout_url) {
-        throw error || new Error("Falha ao gerar link de pagamento na InfinitePay");
-      }
-
-      toast.success("Redirecionando para o pagamento seguro...");
-      // Limpa o carrinho antes de redirecionar para que o usuário não volte com itens no carrinho
-      clear();
-      
-      // Desativa qualquer listener de unload para evitar o aviso de "Sair do site?" do navegador
-      window.onbeforeunload = null;
-      
-      // Redireciona para a URL do Checkout oficial da InfinitePay
-      window.location.href = data.checkout_url;
-    } catch (err) {
-      console.error("[CartPage] Erro ao gerar link de pagamento:", err);
-      toast.error("Não foi possível gerar o link de pagamento. Tente novamente.");
-    }
-  };
-
   const checkout = async () => {
     if (!user || !profile || !profileComplete || items.length === 0) return;
     setSubmitting(true);
@@ -84,7 +59,9 @@ export default function CartPage() {
       });
 
       if (paymentMethod === "Pix") {
-        await generateCheckoutUrl(order.id);
+        toast.success("Pedido registrado! Gerando Pix...");
+        clear();
+        navigate(`/pagamento/pix/${order.id}`);
       } else {
         toast.success("Pedido Enviado!");
         setSubmitted(true);

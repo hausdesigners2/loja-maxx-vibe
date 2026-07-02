@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { LogOut, Shield, User as UserIcon, Heart, ShoppingBag, Save, Package, Pencil } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { LogOut, Shield, User as UserIcon, Heart, ShoppingBag, Save, Package, Pencil, CreditCard } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,7 @@ const empty: Profile = { full_name: "", phone: "", address: "", complement: "", 
 
 export default function AccountPage() {
   const { user, isAdmin, signOut } = useAuth();
+  const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile>(empty);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [saving, setSaving] = useState(false);
@@ -272,6 +273,20 @@ export default function AccountPage() {
                 <p><span className="text-muted-foreground">Data:</span> <span className="font-medium">{new Date(selectedOrder.created_at).toLocaleString("pt-BR")}</span></p>
                 <p><span className="text-muted-foreground">Pagamento:</span> <span className="font-medium">{paymentLabel(selectedOrder.payment_method)}{selectedOrder.payment_method === "cash" && selectedOrder.change_for ? ` (troco p/ ${formatBRL(Number(selectedOrder.change_for))})` : ""}</span></p>
               </div>
+
+              {/* Botão de Pagamento Pix se o pedido estiver pendente e for Pix */}
+              {selectedOrder.status === "pending" && (selectedOrder.payment_method === "Pix" || selectedOrder.payment_method === "pix") && (
+                <Button
+                  onClick={() => {
+                    setSelectedOrder(null);
+                    navigate(`/pagamento/pix/${selectedOrder.id}`);
+                  }}
+                  className="w-full h-12 gradient-primary font-bold shadow-glow flex items-center justify-center gap-2"
+                >
+                  <CreditCard className="h-5 w-5" /> Pagar com Pix
+                </Button>
+              )}
+
               <div className="rounded-lg border border-border p-3 space-y-1">
                 <div className="text-xs font-bold uppercase text-muted-foreground tracking-wider">Cliente</div>
                 <p className="font-medium">{selectedOrder.customer_name || "—"}</p>
