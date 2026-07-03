@@ -167,7 +167,7 @@ export default function PixPaymentPage() {
     }
   };
 
-  // 2. Escuta atualizações em tempo real do status do pedido no Supabase
+  // 2. Escuta atualizações em tempo real do status do pedido no Supabase (Realtime)
   useEffect(() => {
     if (!orderId) return;
 
@@ -198,7 +198,40 @@ export default function PixPaymentPage() {
     };
   }, [orderId]);
 
-  // 3. Contador regressivo de 10 minutos
+  // 3. Script de Polling ativo a cada 5 segundos como fallback robusto
+  useEffect(() => {
+    if (!orderId || paid || expired) return;
+
+    const checkStatus = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("orders")
+          .select("status")
+          .eq("id", orderId)
+          .single();
+
+        if (!error && data) {
+          if (data.status === "paid") {
+            setPaid(true);
+            toast.success("Pagamento aprovado com sucesso!");
+          } else if (data.status === "cancelled") {
+            setExpired(true);
+          }
+        }
+      } catch (err) {
+        console.error("[PixPaymentPage] Erro no polling de status:", err);
+      }
+    };
+
+    // Executa o polling a cada 5 segundos
+    const intervalId = window.setInterval(checkStatus, 5000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [orderId, paid, expired]);
+
+  // 4. Contador regressivo de 10 minutos
   useEffect(() => {
     if (loading || paid || expired || !pix) return;
 
