@@ -115,18 +115,36 @@ export default function PixPaymentPage() {
       // Salva o CPF no localStorage para compras futuras
       localStorage.setItem("loja-maxx-cpf", cpfToUse);
 
-      const { data, error } = await supabase.functions.invoke("mercadopago-checkout", {
-        body: { order_id: orderId, cpf: cleanCpf }
+      // Obtém a sessão atual para autenticação na Edge Function
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRucGNyeGNvbmFmbGlpdWhzemN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5NDMwODcsImV4cCI6MjA5NDUxOTA4N30.JKH9OSsb6Bk62m92E55DMS0WZXrcw6UPzV6RYSvtG4I";
+
+      // Chamada direta usando a URL absoluta e estática da Edge Function conforme as diretrizes do Supabase
+      const response = await fetch("https://tnpcrxconafliiuhszcx.supabase.co/functions/v1/mercadopago-checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ order_id: orderId, cpf: cleanCpf })
       });
 
-      if (error) {
-        console.error("[PixPaymentPage] Erro na chamada da Edge Function:", error);
-        throw new Error("Não foi possível conectar ao servidor de pagamentos. Verifique sua conexão.");
+      console.log("[PixPaymentPage] Código HTTP retornado pela Edge Function:", response.status);
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("[PixPaymentPage] Resposta de erro da Edge Function:", errText);
+        let parsedError;
+        try {
+          parsedError = JSON.parse(errText);
+        } catch {
+          parsedError = { error: errText };
+        }
+        throw new Error(parsedError.error || "Erro ao processar o pagamento na Edge Function.");
       }
 
-      if (!data || data.success === false) {
-        throw new Error(data?.error || "Falha ao gerar Pix no Mercado Pago.");
-      }
+      const data = await response.json();
+      console.log("[PixPaymentPage] Resposta de sucesso recebida da Edge Function.");
 
       if (data.already_paid) {
         setPaid(true);
