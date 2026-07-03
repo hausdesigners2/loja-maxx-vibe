@@ -32,10 +32,27 @@ serve(async (req) => {
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // Recupera o corpo da requisição
-    const { order_id } = await req.json();
+    const { order_id, cpf } = await req.json();
     if (!order_id) {
       console.error("[mercadopago-checkout] Erro: order_id é obrigatório.");
       return new Response(JSON.stringify({ success: false, error: "order_id é obrigatório" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    if (!cpf) {
+      console.error("[mercadopago-checkout] Erro: CPF é obrigatório para pagamentos Pix.");
+      return new Response(JSON.stringify({ success: false, error: "CPF é obrigatório para pagamentos Pix." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const cleanCpf = cpf.replace(/\D/g, "");
+    if (cleanCpf.length !== 11) {
+      console.error("[mercadopago-checkout] Erro: CPF inválido.");
+      return new Response(JSON.stringify({ success: false, error: "CPF inválido. Certifique-se de digitar 11 números." }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
@@ -103,6 +120,10 @@ serve(async (req) => {
         email: customerEmail,
         first_name: firstName,
         last_name: lastName,
+        identification: {
+          type: "CPF",
+          number: cleanCpf
+        },
         phone: {
           area_code: areaCode,
           number: phoneNumber

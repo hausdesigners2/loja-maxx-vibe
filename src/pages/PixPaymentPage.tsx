@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ChevronLeft, Copy, Check, Clock, AlertCircle, CheckCircle2, ShoppingBag } from "lucide-react";
+import { ChevronLeft, Copy, Check, Clock, AlertCircle, CheckCircle2, ShoppingBag, CreditCard } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { formatBRL } from "@/lib/format";
 import { toast } from "sonner";
 
@@ -25,16 +27,32 @@ export default function PixPaymentPage() {
   const [expired, setExpired] = useState(false);
   const [paid, setPaid] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  
+  // CPF States
+  const [cpf, setCpf] = useState(() => localStorage.getItem("loja-maxx-cpf") || "");
+  const [generating, setGenerating] = useState(false);
+  const [needsCpf, setNeedsCpf] = useState(true);
+
   const timerRef = useRef<number | null>(null);
 
-  // 1. Carrega o pedido e gera o Pix
+  // Formata o CPF com máscara (000.000.000-00)
+  const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, "");
+    const formatted = raw
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d)/, "$1.$2")
+      .replace(/(\d{3})(\d{1,2})$/, "$1-$2")
+      .substring(0, 14);
+    setCpf(formatted);
+  };
+
+  // 1. Carrega o pedido inicial
   useEffect(() => {
     if (!orderId) return;
 
-    const loadOrderAndGeneratePix = async () => {
+    const loadOrder = async () => {
       try {
         setErrorMessage(null);
-        // Busca o pedido
         const { data: ord, error: ordErr } = await supabase
           .from("orders")
           .select("*")
@@ -51,52 +69,85 @@ export default function PixPaymentPage() {
 
         if (ord.status === "paid") {
           setPaid(true);
+          setNeedsCpf(false);
           setLoading(false);
           return;
         }
 
         if (ord.status === "cancelled") {
           setExpired(true);
+          setNeedsCpf(false);
           setLoading(false);
           return;
         }
 
-        // Chama a Edge Function para gerar o Pix no Mercado Pago
-        const { data, error } = await supabase.functions.invoke("mercadopago-checkout", {
-          body: { order_id: orderId }
-        });
-
-        if (error) {
-          console.error("[PixPaymentPage] Erro na chamada da Edge Function:", error);
-          throw new Error("Não foi possível conectar ao servidor de pagamentos. Verifique sua conexão.");
-        }
-
-        if (!data || data.success === false) {
-          throw new Error(data?.error || "Falha ao gerar Pix no Mercado Pago.");
-        }
-
-        if (data.already_paid) {
-          setPaid(true);
+        // Se o CPF já estiver salvo no localStorage, podemos tentar gerar o Pix automaticamente
+        const savedCpf = localStorage.getItem("loja-maxx-cpf") || "";
+        if (savedCpf.replace(/\D/g, "").length === 11) {
+          setNeedsCpf(false);
+          generatePix(savedCpf);
         } else {
-          setPix({
-            qr_code: data.qr_code,
-            qr_code_base64: data.qr_code_base64,
-            payment_id: data.payment_id,
-            amount: data.amount
-          });
+          setLoading(false);
         }
-        setLoading(false);
-      } catch (err: any) {
-        console.error("[PixPaymentPage] Erro ao carregar/gerar Pix:", err);
-        const msg = err?.message || "Não foi possível gerar o Pix. Tente novamente.";
-        setErrorMessage(msg);
-        toast.error(msg, { duration: 8000 });
+      } catch (err) {
+        console.error("[PixPaymentPage] Erro ao carregar pedido:", err);
+        setErrorMessage("Não foi possível carregar os detalhes do pedido.");
         setLoading(false);
       }
     };
 
-    loadOrderAndGeneratePix();
+    loadOrder();
   }, [orderId, navigate]);
+
+  // Gera o Pix chamando a Edge Function
+  const generatePix = async (cpfToUse: string) => {
+    const cleanCpf = cpfToUse.replace(/\D/g, "");
+    if (cleanCpf.length !== 11) {
+      toast.error("Por favor, informe um CPF válido com 11 dígitos.");
+      return;
+    }
+
+    setGenerating(true);
+    setLoading(true);
+    setErrorMessage(null);
+
+    try {
+      // Salva o CPF no localStorage para compras futuras
+      localStorage.setItem("loja-maxx-cpf", cpfToUse);
+
+      const { data, error } = await supabase.functions.invoke("mercadopago-checkout", {
+        body: { order_id: orderId, cpf: cleanCpf }
+      });
+
+      if (error) {
+        console.error("[PixPaymentPage] Erro na chamada da Edge Function:", error);
+        throw new Error("Não foi possível conectar ao servidor de pagamentos. Verifique sua conexão.");
+      }
+
+      if (!data || data.success === false) {
+        throw new Error(data?.error || "Falha ao gerar Pix no Mercado Pago.");
+      }
+
+      if (data.already_paid) {
+        setPaid(true);
+      } else {
+        setPix({
+          qr_code: data.qr_code,
+          qr_code_base64: data.qr_code_base64,
+          payment_id: data.payment_id,
+          amount: data.amount
+        });
+        setNeedsCpf(false);
+      }
+    } catch (err: any) {
+      console.error("[PixPaymentPage] Erro ao gerar Pix:", err);
+      setErrorMessage(err?.message || "Não foi possível gerar o Pix. Tente novamente.");
+      setNeedsCpf(true);
+    } finally {
+      setGenerating(false);
+      setLoading(false);
+    }
+  };
 
   // 2. Escuta atualizações em tempo real do status do pedido no Supabase
   useEffect(() => {
@@ -174,34 +225,7 @@ export default function PixPaymentPage() {
       <AppShell>
         <div className="flex flex-col items-center justify-center py-24 text-center space-y-4">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-          <p className="text-sm text-muted-foreground">Gerando seu QR Code Pix seguro...</p>
-        </div>
-      </AppShell>
-    );
-  }
-
-  if (errorMessage) {
-    return (
-      <AppShell>
-        <div className="flex flex-col items-center gap-4 py-16 text-center animate-fade-in">
-          <div className="grid h-20 w-20 place-items-center rounded-full bg-red-500/10 text-red-500">
-            <AlertCircle className="h-10 w-10" />
-          </div>
-          <div className="space-y-2 max-w-md">
-            <h2 className="text-xl font-extrabold text-foreground">Falha ao Gerar Pagamento</h2>
-            <p className="text-sm text-muted-foreground">{errorMessage}</p>
-            <p className="text-xs text-muted-foreground/70 bg-secondary/50 p-3 rounded-xl border border-border/50 mt-2">
-              Se você é o administrador da loja, certifique-se de que configurou a variável de ambiente <strong>MERCADO_PAGO_ACCESS_TOKEN</strong> corretamente no painel do Supabase.
-            </p>
-          </div>
-          <div className="flex gap-3 mt-2">
-            <Button asChild variant="outline">
-              <Link to="/conta">Meus Pedidos</Link>
-            </Button>
-            <Button asChild className="gradient-primary shadow-glow">
-              <Link to="/">Voltar para a loja</Link>
-            </Button>
-          </div>
+          <p className="text-sm text-muted-foreground">Processando...</p>
         </div>
       </AppShell>
     );
@@ -240,6 +264,60 @@ export default function PixPaymentPage() {
           <Button asChild className="gradient-primary shadow-glow mt-2">
             <Link to="/">Voltar para a loja</Link>
           </Button>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (needsCpf) {
+    return (
+      <AppShell>
+        <div className="space-y-5 animate-fade-in pb-8">
+          <Link to="/conta" className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+            <ChevronLeft className="h-4 w-4" /> Meus Pedidos
+          </Link>
+
+          <div className="text-center space-y-2">
+            <div className="grid h-14 w-14 place-items-center rounded-2xl gradient-primary shadow-glow mx-auto">
+              <ShoppingBag className="h-7 w-7 text-primary-foreground" />
+            </div>
+            <h1 className="text-xl font-extrabold">Identificação do Pagador</h1>
+            <p className="text-xs text-muted-foreground">O Mercado Pago exige um CPF válido para gerar o Pix.</p>
+          </div>
+
+          {errorMessage && (
+            <div className="rounded-xl bg-red-500/10 p-4 border border-red-500/20 flex items-start gap-3 text-xs text-red-500">
+              <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block">Erro ao gerar Pix:</span>
+                <span>{errorMessage}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="rounded-2xl bg-card p-5 border border-border/40 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="cpf-input" className="text-sm font-bold">Informe seu CPF</Label>
+              <Input
+                id="cpf-input"
+                type="text"
+                inputMode="numeric"
+                placeholder="000.000.000-00"
+                value={cpf}
+                onChange={handleCpfChange}
+                className="h-12 text-base"
+              />
+            </div>
+
+            <Button
+              onClick={() => generatePix(cpf)}
+              disabled={generating || cpf.replace(/\D/g, "").length !== 11}
+              className="w-full h-12 gradient-primary font-bold shadow-glow text-base flex items-center justify-center gap-2"
+            >
+              <CreditCard className="h-5 w-5" />
+              {generating ? "Gerando Pix..." : "Gerar QR Code Pix"}
+            </Button>
+          </div>
         </div>
       </AppShell>
     );
