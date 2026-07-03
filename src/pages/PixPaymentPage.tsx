@@ -228,7 +228,7 @@ export default function PixPaymentPage() {
     if (!pix) return;
     navigator.clipboard.writeText(pix.qr_code);
     setCopied(true);
-    toast.success("Código Pix Copia e Cola copiado!");
+    toast.success("Código Pix copiado com sucesso!");
     setTimeout(() => setCopied(false), 3000);
   };
 
@@ -375,10 +375,15 @@ export default function PixPaymentPage() {
             <div className="text-2xl font-extrabold text-primary">{formatBRL(Number(order?.total || 0))}</div>
           </div>
 
-          {/* Countdown Timer */}
-          <div className="flex items-center gap-2 rounded-full bg-secondary/50 px-4 py-1.5 text-xs font-semibold text-muted-foreground">
-            <Clock className="h-4 w-4 text-primary animate-pulse" />
-            <span>Pague em até: <strong className="text-foreground">{formatTime(timeLeft)}</strong></span>
+          {/* Status & Countdown Timer */}
+          <div className="flex flex-col items-center gap-2">
+            <span className="inline-block rounded-full bg-yellow-500/20 text-yellow-500 px-3 py-1 text-xs font-bold">
+              Aguardando pagamento
+            </span>
+            <div className="flex items-center gap-2 rounded-full bg-secondary/50 px-4 py-1.5 text-xs font-semibold text-muted-foreground">
+              <Clock className="h-4 w-4 text-primary animate-pulse" />
+              <span>Pague em até: <strong className="text-foreground">{formatTime(timeLeft)}</strong></span>
+            </div>
           </div>
         </div>
 

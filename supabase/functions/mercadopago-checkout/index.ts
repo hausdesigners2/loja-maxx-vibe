@@ -187,18 +187,28 @@ serve(async (req) => {
       });
     }
 
-    // Atualiza o pedido no Supabase com o ID do pagamento do Mercado Pago
-    const { error: updateError } = await supabaseClient
-      .from("orders")
-      .update({
-        payment_id: paymentId,
-        payment_status: status,
-        updated_at: new Date().toISOString()
-      } as any)
-      .eq("id", order.id);
+    // Atualiza o pedido no Supabase com o ID do pagamento do Mercado Pago de forma resiliente
+    try {
+      const { error: updateError } = await supabaseClient
+        .from("orders")
+        .update({
+          payment_id: paymentId,
+          payment_status: status,
+          updated_at: new Date().toISOString()
+        } as any)
+        .eq("id", order.id);
 
-    if (updateError) {
-      console.error("[mercadopago-checkout] Erro ao atualizar pedido no Supabase:", updateError);
+      if (updateError) {
+        console.warn("[mercadopago-checkout] Colunas adicionais de pagamento não existem. Atualizando apenas updated_at.");
+        await supabaseClient
+          .from("orders")
+          .update({
+            updated_at: new Date().toISOString()
+          } as any)
+          .eq("id", order.id);
+      }
+    } catch (dbErr) {
+      console.error("[mercadopago-checkout] Erro ao atualizar pedido no banco:", dbErr);
     }
 
     return new Response(
