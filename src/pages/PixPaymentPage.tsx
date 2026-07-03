@@ -24,6 +24,7 @@ export default function PixPaymentPage() {
   const [timeLeft, setTimeLeft] = useState(600); // 10 minutos em segundos
   const [expired, setExpired] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const timerRef = useRef<number | null>(null);
 
   // 1. Carrega o pedido e gera o Pix
@@ -32,6 +33,7 @@ export default function PixPaymentPage() {
 
     const loadOrderAndGeneratePix = async () => {
       try {
+        setErrorMessage(null);
         // Busca o pedido
         const { data: ord, error: ordErr } = await supabase
           .from("orders")
@@ -64,8 +66,13 @@ export default function PixPaymentPage() {
           body: { order_id: orderId }
         });
 
-        if (error || !data || !data.success) {
-          throw error || new Error(data?.error || "Falha ao gerar Pix");
+        if (error) {
+          console.error("[PixPaymentPage] Erro na chamada da Edge Function:", error);
+          throw new Error("Não foi possível conectar ao servidor de pagamentos. Verifique sua conexão.");
+        }
+
+        if (!data || data.success === false) {
+          throw new Error(data?.error || "Falha ao gerar Pix no Mercado Pago.");
         }
 
         if (data.already_paid) {
@@ -79,9 +86,11 @@ export default function PixPaymentPage() {
           });
         }
         setLoading(false);
-      } catch (err) {
+      } catch (err: any) {
         console.error("[PixPaymentPage] Erro ao carregar/gerar Pix:", err);
-        toast.error("Não foi possível gerar o Pix. Tente novamente.");
+        const msg = err?.message || "Não foi possível gerar o Pix. Tente novamente.";
+        setErrorMessage(msg);
+        toast.error(msg, { duration: 8000 });
         setLoading(false);
       }
     };
@@ -166,6 +175,33 @@ export default function PixPaymentPage() {
         <div className="flex flex-col items-center justify-center py-24 text-center space-y-4">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent" />
           <p className="text-sm text-muted-foreground">Gerando seu QR Code Pix seguro...</p>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <AppShell>
+        <div className="flex flex-col items-center gap-4 py-16 text-center animate-fade-in">
+          <div className="grid h-20 w-20 place-items-center rounded-full bg-red-500/10 text-red-500">
+            <AlertCircle className="h-10 w-10" />
+          </div>
+          <div className="space-y-2 max-w-md">
+            <h2 className="text-xl font-extrabold text-foreground">Falha ao Gerar Pagamento</h2>
+            <p className="text-sm text-muted-foreground">{errorMessage}</p>
+            <p className="text-xs text-muted-foreground/70 bg-secondary/50 p-3 rounded-xl border border-border/50 mt-2">
+              Se você é o administrador da loja, certifique-se de que configurou a variável de ambiente <strong>MERCADO_PAGO_ACCESS_TOKEN</strong> corretamente no painel do Supabase.
+            </p>
+          </div>
+          <div className="flex gap-3 mt-2">
+            <Button asChild variant="outline">
+              <Link to="/conta">Meus Pedidos</Link>
+            </Button>
+            <Button asChild className="gradient-primary shadow-glow">
+              <Link to="/">Voltar para a loja</Link>
+            </Button>
+          </div>
         </div>
       </AppShell>
     );

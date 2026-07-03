@@ -16,9 +16,14 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const mpAccessToken = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN");
 
+    console.log("[mercadopago-checkout] Iniciando processo de checkout Pix...");
+
     if (!mpAccessToken) {
-      console.error("[mercadopago-checkout] Erro: MERCADO_PAGO_ACCESS_TOKEN não configurado.");
-      return new Response(JSON.stringify({ error: "MERCADO_PAGO_ACCESS_TOKEN não configurado" }), {
+      console.error("[mercadopago-checkout] Erro: MERCADO_PAGO_ACCESS_TOKEN não configurado nas variáveis de ambiente do Supabase.");
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: "MERCADO_PAGO_ACCESS_TOKEN não configurado nas variáveis de ambiente do Supabase. Por favor, configure este segredo no painel do Supabase." 
+      }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
@@ -30,7 +35,7 @@ serve(async (req) => {
     const { order_id } = await req.json();
     if (!order_id) {
       console.error("[mercadopago-checkout] Erro: order_id é obrigatório.");
-      return new Response(JSON.stringify({ error: "order_id é obrigatório" }), {
+      return new Response(JSON.stringify({ success: false, error: "order_id é obrigatório" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
@@ -45,7 +50,7 @@ serve(async (req) => {
 
     if (orderError || !order) {
       console.error("[mercadopago-checkout] Erro ao buscar pedido no banco:", orderError);
-      return new Response(JSON.stringify({ error: "Pedido não encontrado" }), {
+      return new Response(JSON.stringify({ success: false, error: "Pedido não encontrado no banco de dados." }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
@@ -53,15 +58,12 @@ serve(async (req) => {
 
     // Se o pedido já estiver pago, retorna sucesso imediatamente
     if (order.status === "paid") {
+      console.log("[mercadopago-checkout] Pedido já está pago.");
       return new Response(JSON.stringify({ success: true, already_paid: true }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
-
-    // Se já existir um pagamento Pix ativo e válido (gerado nos últimos 10 minutos), podemos reutilizá-lo
-    // Para simplificar e garantir que o valor/itens estejam sempre corretos, geramos um novo pagamento ou reutilizamos se armazenado.
-    // Vamos gerar um novo pagamento Pix no Mercado Pago.
 
     // Busca o e-mail do cliente no perfil se houver um user_id associado
     let customerEmail = "cliente@lojasmaxx.com.br";
@@ -71,22 +73,28 @@ serve(async (req) => {
         .select("email")
         .eq("user_id", order.user_id)
         .maybeSingle();
-      if (profile?.email) {
+      if (profile?.email && profile.email.includes("@")) {
         customerEmail = profile.email;
       }
     }
 
-    // Formata o nome do cliente
-    const nameParts = (order.customer_name || "Cliente Lojas Maxx").trim().split(" ");
+    // Formata o nome do cliente de forma robusta
+    const nameParts = (order.customer_name || "Cliente Lojas Maxx").trim().split(/\s+/);
     const firstName = nameParts[0] || "Cliente";
     const lastName = nameParts.slice(1).join(" ") || "Lojas Maxx";
 
-    // Limpa o telefone (apenas números)
+    // Limpa e valida o telefone (apenas números)
     const cleanPhone = (order.customer_phone || "").replace(/\D/g, "");
-    const areaCode = cleanPhone.substring(0, 2) || "11";
-    const phoneNumber = cleanPhone.substring(2) || "999999999";
+    let areaCode = "11";
+    let phoneNumber = "999999999";
+    if (cleanPhone.length >= 10) {
+      areaCode = cleanPhone.substring(0, 2);
+      phoneNumber = cleanPhone.substring(2);
+    } else if (cleanPhone.length > 0) {
+      phoneNumber = cleanPhone;
+    }
 
-    // Monta o payload para o Mercado Pago
+    // Monta o payload para o Mercado Pago seguindo estritamente a API de pagamentos v1
     const mpPayload = {
       transaction_amount: Number(order.total),
       description: `Pedido #${order.order_number || order.id.slice(0, 8)} - Lojas Maxx`,
@@ -112,7 +120,7 @@ serve(async (req) => {
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${mpAccessToken}`,
-        "X-Idempotency-Key": order.id // Evita duplicidade de pagamentos para o mesmo pedido
+        "X-Idempotency-Key": order.id
       },
       body: JSON.stringify(mpPayload)
     });
@@ -120,8 +128,21 @@ serve(async (req) => {
     if (!mpResponse.ok) {
       const errText = await mpResponse.text();
       console.error(`[mercadopago-checkout] Erro retornado pelo Mercado Pago (${mpResponse.status}): ${errText}`);
-      return new Response(JSON.stringify({ error: `Erro no Mercado Pago: ${errText}` }), {
-        status: mpResponse.status,
+      
+      let parsedError;
+      try {
+        parsedError = JSON.parse(errText);
+      } catch {
+        parsedError = { message: errText };
+      }
+
+      const errorMessage = parsedError.message || parsedError.description || "Erro desconhecido na API do Mercado Pago.";
+
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: `Erro na API do Mercado Pago: ${errorMessage}` 
+      }), {
+        status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
@@ -132,11 +153,14 @@ serve(async (req) => {
     const paymentId = String(mpData.id);
     const qrCode = mpData.point_of_interaction?.transaction_data?.qr_code;
     const qrCodeBase64 = mpData.point_of_interaction?.transaction_data?.qr_code_base64;
-    const status = mpData.status; // "pending", "approved", etc.
+    const status = mpData.status;
 
     if (!qrCode || !qrCodeBase64) {
-      console.error("[mercadopago-checkout] Erro: Dados do Pix não retornados pelo Mercado Pago.");
-      return new Response(JSON.stringify({ error: "Dados do Pix não retornados pelo Mercado Pago" }), {
+      console.error("[mercadopago-checkout] Erro: Dados do Pix não retornados pelo Mercado Pago.", JSON.stringify(mpData));
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: "A API do Mercado Pago não retornou os dados do QR Code Pix. Verifique se sua conta do Mercado Pago está ativa e homologada para receber Pix." 
+      }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
@@ -174,7 +198,7 @@ serve(async (req) => {
   } catch (error) {
     console.error("[mercadopago-checkout] Erro geral na execução da função:", error);
     return new Response(
-      JSON.stringify({ error: (error as Error).message }),
+      JSON.stringify({ success: false, error: (error as Error).message }),
       {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
