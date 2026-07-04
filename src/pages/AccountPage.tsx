@@ -54,6 +54,7 @@ export default function AccountPage() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState<Profile>(empty);
   const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [visibleCount, setVisibleCount] = useState(5);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<OrderFull | null>(null);
@@ -165,6 +166,8 @@ export default function AccountPage() {
     );
   }
 
+  const visibleOrders = orders.slice(0, visibleCount);
+
   return (
     <AppShell>
       <div className="space-y-5 animate-fade-in pb-8">
@@ -217,23 +220,38 @@ export default function AccountPage() {
         {orders.length > 0 && (
           <div className="rounded-2xl bg-card p-4 space-y-2">
             <h2 className="text-sm font-bold flex items-center gap-2"><Package className="h-4 w-4" /> Meus pedidos (últimos 10 dias)</h2>
-            {orders.map((o) => (
-              <button
-                type="button"
-                key={o.id}
-                onClick={() => openOrder(o.id)}
-                className="flex w-full items-center justify-between border-t border-border pt-2 text-left text-xs transition-colors hover:bg-secondary/30 rounded-md px-1"
-              >
-                <div>
-                  <div className="font-semibold">#{o.order_number ?? o.id.slice(0, 8)}</div>
-                  <div className="text-muted-foreground">{new Date(o.created_at).toLocaleDateString("pt-BR")} · {customerStatusLabel(o.status)}</div>
-                </div>
-                <div className="flex flex-col items-end">
-                  <div className="font-bold text-primary">{formatBRL(Number(o.total))}</div>
-                  <span className="text-[11px] text-primary underline underline-offset-2">Ver detalhes</span>
-                </div>
-              </button>
-            ))}
+            <div className="space-y-2">
+              {visibleOrders.map((o) => (
+                <button
+                  type="button"
+                  key={o.id}
+                  onClick={() => openOrder(o.id)}
+                  className="flex w-full items-center justify-between border-t border-border pt-2 text-left text-xs transition-colors hover:bg-secondary/30 rounded-md px-1"
+                >
+                  <div>
+                    <div className="font-semibold">#{o.order_number ?? o.id.slice(0, 8)}</div>
+                    <div className="text-muted-foreground">{new Date(o.created_at).toLocaleDateString("pt-BR")} · {customerStatusLabel(o.status)}</div>
+                  </div>
+                  <div className="flex flex-col items-end">
+                    <div className="font-bold text-primary">{formatBRL(Number(o.total))}</div>
+                    <span className="text-[11px] text-primary underline underline-offset-2">Ver detalhes</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {orders.length > visibleCount && (
+              <div className="pt-3 flex justify-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setVisibleCount((prev) => prev + 5)}
+                  className="text-xs font-semibold text-primary border-primary/20 hover:bg-primary/10"
+                >
+                  Ver mais pedidos
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
