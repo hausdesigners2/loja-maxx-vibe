@@ -50,48 +50,19 @@ const Index = () => {
 
   useEffect(() => {
     (async () => {
-      // 1. Buscar categorias existentes
-      let { data: cats } = await supabase
+      // 1. Buscar categorias existentes (apenas leitura)
+      const { data: cats } = await supabase
         .from("categories")
         .select("*")
         .order("sort_order", { ascending: true });
-      
-      cats = cats ?? [];
-
-      // 2. Verificar se Biscoitos e Bazar existem, se não, tentar inserir no banco
-      const hasBiscoitos = cats.some((c) => c.slug === "biscoitos");
-      const hasBazar = cats.some((c) => c.slug === "bazar");
-
-      if (!hasBiscoitos || !hasBazar) {
-        const toInsert = [];
-        if (!hasBiscoitos) {
-          toInsert.push({ name: "Biscoitos", slug: "biscoitos", icon: "🍪", sort_order: 6 });
-        }
-        if (!hasBazar) {
-          toInsert.push({ name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7 });
-        }
-
-        try {
-          const { error } = await supabase.from("categories").insert(toInsert);
-          if (!error) {
-            const { data: updatedCats } = await supabase
-              .from("categories")
-              .select("*")
-              .order("sort_order", { ascending: true });
-            cats = updatedCats ?? cats;
-          }
-        } catch (e) {
-          console.warn("Não foi possível auto-cadastrar as categorias ausentes no banco:", e);
-        }
-      }
 
       const [best, feat] = await Promise.all([
         supabase.from("products").select("*").eq("active", true).eq("is_best_seller", true).limit(40),
         supabase.from("products").select("*").eq("active", true).eq("is_featured", true).limit(8),
       ]);
 
-      // Mescla com a lista padrão para garantir exibição imediata
-      setCategories(mergeCategories(cats));
+      // Mescla com a lista padrão em memória para garantir exibição imediata sem precisar gravar no banco
+      setCategories(mergeCategories(cats ?? []));
       setBestSellersPool(shuffle(best.data ?? []));
       setFeatured(feat.data ?? []);
       setLoading(false);
