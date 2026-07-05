@@ -12,6 +12,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { Admin2FAGuard } from "@/components/Admin2FAGuard";
 
 type Banner = Tables<"banners">;
 
@@ -103,10 +104,10 @@ export default function AdminBannersPage() {
     setUploading(true);
     try {
       const blob = await compress(file);
-      const path = `${crypto.randomUUID()}.jpg`;
+      const path = `${crypto.randomUUID()}.${file.name.split(".").pop()}`;
       const { error } = await supabase.storage
         .from("banners")
-        .upload(path, blob, { contentType: "image/jpeg", upsert: false });
+        .upload(path, blob, { contentType: file.type, upsert: false });
       if (error) throw error;
       const { data } = supabase.storage.from("banners").getPublicUrl(path);
       setForm((f) => ({ ...f, image_url: data.publicUrl }));
@@ -175,125 +176,127 @@ export default function AdminBannersPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-          <Link to="/admin" className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-            <ChevronLeft className="h-4 w-4" /> Painel
-          </Link>
-          <h1 className="text-base font-bold">Gerenciar Banners</h1>
-          <Button size="sm" className="gradient-primary" onClick={openNew}>
-            <Plus className="mr-1 h-4 w-4" /> Novo
-          </Button>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-3xl space-y-3 px-4 py-4">
-        <p className="text-sm text-muted-foreground">
-          {items.length} banner(s) · tamanho ideal 1600x600 px
-        </p>
-
-        {items.map((b, i) => (
-          <div key={b.id} className="flex gap-3 rounded-2xl bg-card p-3">
-            <div className="aspect-[8/3] w-28 shrink-0 overflow-hidden rounded-xl bg-secondary">
-              <img src={b.image_url} alt={b.title} className="h-full w-full object-cover" loading="lazy" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="truncate text-sm font-semibold">{b.title || "(sem título)"}</h3>
-              <p className="truncate text-xs text-muted-foreground">{b.subtitle}</p>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <span className={`rounded px-1.5 py-0.5 text-[10px] ${b.active ? "bg-primary/20 text-primary" : "bg-muted"}`}>
-                  {b.active ? "ativo" : "inativo"}
-                </span>
-                <Switch checked={b.active} onCheckedChange={() => toggleActive(b)} />
-              </div>
-            </div>
-            <div className="flex flex-col gap-1">
-              <Button size="icon" variant="outline" onClick={() => move(i, -1)} disabled={i === 0}>
-                <ArrowUp className="h-4 w-4" />
-              </Button>
-              <Button size="icon" variant="outline" onClick={() => move(i, 1)} disabled={i === items.length - 1}>
-                <ArrowDown className="h-4 w-4" />
-              </Button>
-              <Button size="icon" variant="outline" onClick={() => openEdit(b)}>
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button size="icon" variant="outline" onClick={() => remove(b.id)}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </div>
-          </div>
-        ))}
-
-        {items.length === 0 && (
-          <div className="rounded-2xl bg-card p-8 text-center text-sm text-muted-foreground">
-            Nenhum banner. Clique em "Novo" para adicionar.
-          </div>
-        )}
-      </main>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{form.id ? "Editar banner" : "Novo banner"}</DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-3">
-            <div>
-              <Label>Imagem (1600x600 px, JPG ou PNG)</Label>
-              <div className="mt-1 flex items-center gap-3">
-                <div className="aspect-[8/3] w-32 shrink-0 overflow-hidden rounded-xl bg-secondary">
-                  {form.image_url
-                    ? <img src={form.image_url} alt="preview" className="h-full w-full object-cover" />
-                    : <div className="grid h-full place-items-center text-2xl text-muted-foreground">🖼️</div>}
-                </div>
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm hover:bg-secondary">
-                  <Upload className="h-4 w-4" />
-                  {uploading ? "Enviando..." : "Carregar"}
-                  <input type="file" accept="image/jpeg,image/png" className="hidden"
-                    onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])} />
-                </label>
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Mantenha o conteúdo importante centralizado (área segura).
-              </p>
-            </div>
-
-            <div>
-              <Label>Título</Label>
-              <Input value={form.title} maxLength={80} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-            </div>
-
-            <div>
-              <Label>Subtítulo</Label>
-              <Input value={form.subtitle} maxLength={140} onChange={(e) => setForm({ ...form, subtitle: e.target.value })} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Texto do botão</Label>
-                <Input value={form.button_text} maxLength={30} onChange={(e) => setForm({ ...form, button_text: e.target.value })} />
-              </div>
-              <div>
-                <Label>Link (URL)</Label>
-                <Input value={form.link_url} placeholder="/categoria/bebidas" onChange={(e) => setForm({ ...form, link_url: e.target.value })} />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between rounded-xl bg-secondary/50 p-3">
-              <span className="text-sm">Ativo (visível na loja)</span>
-              <Switch checked={form.active} onCheckedChange={(v) => setForm({ ...form, active: v })} />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
-            <Button onClick={save} disabled={saving} className="gradient-primary">
-              {saving ? "Salvando..." : "Salvar"}
+    <Admin2FAGuard>
+      <div className="min-h-screen bg-background">
+        <header className="sticky top-0 z-30 border-b border-border bg-background/95 backdrop-blur">
+          <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
+            <Link to="/admin" className="inline-flex items-center gap-1 text-sm text-muted-foreground">
+              <ChevronLeft className="h-4 w-4" /> Painel
+            </Link>
+            <h1 className="text-base font-bold">Gerenciar Banners</h1>
+            <Button size="sm" className="gradient-primary" onClick={openNew}>
+              <Plus className="mr-1 h-4 w-4" /> Novo
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-3xl space-y-3 px-4 py-4">
+          <p className="text-sm text-muted-foreground">
+            {items.length} banner(s) · tamanho ideal 1600x600 px
+          </p>
+
+          {items.map((b, i) => (
+            <div key={b.id} className="flex gap-3 rounded-2xl bg-card p-3">
+              <div className="aspect-[8/3] w-28 shrink-0 overflow-hidden rounded-xl bg-secondary">
+                <img src={b.image_url} alt={b.title} className="h-full w-full object-cover" loading="lazy" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="truncate text-sm font-semibold">{b.title || "(sem título)"}</h3>
+                <p className="truncate text-xs text-muted-foreground">{b.subtitle}</p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] ${b.active ? "bg-primary/20 text-primary" : "bg-muted"}`}>
+                    {b.active ? "ativo" : "inativo"}
+                  </span>
+                  <Switch checked={b.active} onCheckedChange={() => toggleActive(b)} />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <Button size="icon" variant="outline" onClick={() => move(i, -1)} disabled={i === 0}>
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
+                <Button size="icon" variant="outline" onClick={() => move(i, 1)} disabled={i === items.length - 1}>
+                  <ArrowDown className="h-4 w-4" />
+                </Button>
+                <Button size="icon" variant="outline" onClick={() => openEdit(b)}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button size="icon" variant="outline" onClick={() => remove(b.id)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              </div>
+            </div>
+          ))}
+
+          {items.length === 0 && (
+            <div className="rounded-2xl bg-card p-8 text-center text-sm text-muted-foreground">
+              Nenhum banner. Clique em "Novo" para adicionar.
+            </div>
+          )}
+        </main>
+
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{form.id ? "Editar banner" : "Novo banner"}</DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              <div>
+                <Label>Imagem (1600x600 px, JPG ou PNG)</Label>
+                <div className="mt-1 flex items-center gap-3">
+                  <div className="aspect-[8/3] w-32 shrink-0 overflow-hidden rounded-xl bg-secondary">
+                    {form.image_url
+                      ? <img src={form.image_url} alt="preview" className="h-full w-full object-cover" />
+                      : <div className="grid h-full place-items-center text-2xl text-muted-foreground">🖼️</div>}
+                  </div>
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm hover:bg-secondary">
+                    <Upload className="h-4 w-4" />
+                    {uploading ? "Enviando..." : "Carregar"}
+                    <input type="file" accept="image/jpeg,image/png" className="hidden"
+                      onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])} />
+                  </label>
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Mantenha o conteúdo importante centralizado (área segura).
+                </p>
+              </div>
+
+              <div>
+                <Label>Título</Label>
+                <Input value={form.title} maxLength={80} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+              </div>
+
+              <div>
+                <Label>Subtítulo</Label>
+                <Input value={form.subtitle} maxLength={140} onChange={(e) => setForm({ ...form, subtitle: e.target.value })} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Texto do botão</Label>
+                  <Input value={form.button_text} maxLength={30} onChange={(e) => setForm({ ...form, button_text: e.target.value })} />
+                </div>
+                <div>
+                  <Label>Link (URL)</Label>
+                  <Input value={form.link_url} placeholder="/categoria/bebidas" onChange={(e) => setForm({ ...form, link_url: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-xl bg-secondary/50 p-3">
+                <span className="text-sm">Ativo (visível na loja)</span>
+                <Switch checked={form.active} onCheckedChange={(v) => setForm({ ...form, active: v })} />
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOpen(false)}>Cancelar</Button>
+              <Button onClick={save} disabled={saving} className="gradient-primary">
+                {saving ? "Salvando..." : "Salvar"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </Admin2FAGuard>
   );
 }
