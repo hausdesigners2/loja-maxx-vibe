@@ -19,6 +19,8 @@ import AdminPage from "./pages/AdminPage";
 import AdminBannersPage from "./pages/AdminBannersPage";
 import AdminDashboardPage from "./pages/AdminDashboardPage";
 import PixPaymentPage from "./pages/PixPaymentPage";
+import TermsPage from "./pages/TermsPage";
+import PrivacyPage from "./pages/PrivacyPage";
 
 const queryClient = new QueryClient();
 
@@ -44,6 +46,8 @@ const App = () => (
               <Route path="/admin/banners" element={<AdminBannersPage />} />
               <Route path="/admin/dashboard" element={<AdminDashboardPage />} />
               <Route path="/pagamento/pix/:orderId" element={<PixPaymentPage />} />
+              <Route path="/termos-de-uso" element={<TermsPage />} />
+              <Route path="/politica-de-privacidade" element={<PrivacyPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

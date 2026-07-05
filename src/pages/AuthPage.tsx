@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronLeft, ShoppingBag, CheckCircle2, Eye, EyeOff, KeyRound } from "lucide-react";
+import { ChevronLeft, ShoppingBag, CheckCircle2, Eye, EyeOff, KeyRound, AlertCircle } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { authSchema, emailSchema, formatAuthError, friendlyAuthError } from "@/lib/security";
 import { supabase } from "@/integrations/supabase/client";
+import { LegalDocumentModal, TERMS_VERSION, PRIVACY_VERSION } from "@/components/LegalDocuments";
 
 export default function AuthPage() {
   const { signIn, signUp } = useAuth();
@@ -33,10 +34,14 @@ export default function AuthPage() {
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
+
+  // Estados para os Modais de Termos e Privacidade
+  const [legalModalType, setLegalModalType] = useState<"terms" | "privacy" | null>(null);
 
   // Formata o telefone com máscara (99) 99999-9999
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,6 +51,13 @@ export default function AuthPage() {
       .replace(/(\d)(\d{4})$/, "$1-$2")
       .substring(0, 15);
     setPhone(formatted);
+  };
+
+  const handleCheckboxChange = (checked: boolean) => {
+    setAcceptedTerms(checked);
+    if (checked) {
+      setValidationError(null);
+    }
   };
 
   const handle = async (mode: "in" | "up") => {
@@ -74,7 +86,8 @@ export default function AuthPage() {
         return;
       }
       if (!acceptedTerms) {
-        toast.error("Você precisa aceitar os termos de uso e a política de privacidade.");
+        setValidationError("Você precisa ler e aceitar os Termos de Uso e a Política de Privacidade para criar sua conta.");
+        toast.error("Você precisa ler e aceitar os Termos de Uso e a Política de Privacidade para criar sua conta.");
         return;
       }
     }
@@ -86,11 +99,16 @@ export default function AuthPage() {
       if (mode === "in") {
         result = await signIn(parsed.data.email, parsed.data.password);
       } else {
-        // Passa os metadados adicionais para o Supabase Auth
+        // Passa os metadados adicionais para o Supabase Auth (Backend Validation & Storage)
         result = await signUp(parsed.data.email, parsed.data.password, {
           full_name: fullName.trim(),
           phone: phone.trim(),
-          address: address.trim()
+          address: address.trim(),
+          accepted_terms: true,
+          accepted_privacy: true,
+          accepted_at: new Date().toISOString(),
+          terms_version: TERMS_VERSION,
+          privacy_version: PRIVACY_VERSION
         });
       }
       console.log(`[AuthPage] resposta do ${mode === "in" ? "signIn" : "signUp"}:`, result);
@@ -120,7 +138,7 @@ export default function AuthPage() {
       // Se o usuário foi autenticado imediatamente (confirmação de e-mail desativada)
       if (data?.session) {
         try {
-          // Salva os dados diretamente na tabela customer_profiles
+          // Salva os dados diretamente na tabela customer_profiles com o registro de aceite
           const { error: profileError } = await supabase
             .from("customer_profiles")
             .upsert({
@@ -128,7 +146,8 @@ export default function AuthPage() {
               full_name: fullName.trim(),
               phone: phone.trim(),
               address: address.trim(),
-              email: usedEmail
+              email: usedEmail,
+              complement: `[Accepted Terms ${TERMS_VERSION} & Privacy ${PRIVACY_VERSION} at ${new Date().toLocaleDateString("pt-BR")}]`
             }, { onConflict: "user_id" });
 
           if (profileError) {
@@ -142,8 +161,6 @@ export default function AuthPage() {
         setLoading(false);
         nav("/", { replace: true });
       } else {
-        // Se a confirmação de e-mail estiver ativada, criamos o perfil via trigger ou na primeira sessão.
-        // Para garantir, tentamos salvar usando a sessão anon se as permissões permitirem, ou deixamos para o primeiro login.
         toast.success("Conta criada com sucesso!");
         setEmail("");
         setPassword("");
@@ -221,7 +238,7 @@ export default function AuthPage() {
           </div>
         ) : (
           <>
-            <Tabs value={tab} onValueChange={(v) => { setTab(v as "in" | "up"); setShowPass(false); }} className="mt-6">
+            <Tabs value={tab} onValueChange={(v) => { setTab(v as "in" | "up"); setShowPass(false); setValidationError(null); }} className="mt-6">
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="in">Entrar</TabsTrigger>
                 <TabsTrigger value="up">Criar conta</TabsTrigger>
@@ -314,16 +331,39 @@ export default function AuthPage() {
                   </div>
                 </div>
 
+                {validationError && (
+                  <div className="rounded-xl bg-red-500/10 p-3 border border-red-500/20 flex items-start gap-2 text-xs text-red-500 animate-fade-in">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{validationError}</span>
+                  </div>
+                )}
+
                 <div className="flex items-start gap-2.5 pt-2">
                   <input
                     id="up-terms"
                     type="checkbox"
                     checked={acceptedTerms}
-                    onChange={(e) => setAcceptedTerms(e.target.checked)}
-                    className="mt-1 h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
+                    onChange={(e) => handleCheckboxChange(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary cursor-pointer"
                   />
-                  <Label htmlFor="up-terms" className="text-xs leading-normal text-muted-foreground cursor-pointer">
-                    Li e aceito os <span className="text-primary underline">Termos de Uso</span> e a <span className="text-primary underline">Política de Privacidade</span> da Lojas Maxx.
+                  <Label htmlFor="up-terms" className="text-xs leading-normal text-muted-foreground cursor-pointer select-none">
+                    Li e aceito os{" "}
+                    <button
+                      type="button"
+                      onClick={() => setLegalModalType("terms")}
+                      className="text-primary underline font-semibold hover:text-primary/80"
+                    >
+                      Termos de Uso
+                    </button>{" "}
+                    e a{" "}
+                    <button
+                      type="button"
+                      onClick={() => setLegalModalType("privacy")}
+                      className="text-primary underline font-semibold hover:text-primary/80"
+                    >
+                      Política de Privacidade
+                    </button>{" "}
+                    da Lojas Maxx.
                   </Label>
                 </div>
 
@@ -340,6 +380,7 @@ export default function AuthPage() {
         )}
       </div>
 
+      {/* Modal de Recuperação de Senha */}
       <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
@@ -371,6 +412,18 @@ export default function AuthPage() {
               {forgotLoading ? "Enviando..." : "Enviar link"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de Termos de Uso e Política de Privacidade */}
+      <Dialog open={legalModalType !== null} onOpenChange={(open) => !open && setLegalModalType(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-hidden">
+          {legalModalType && (
+            <LegalDocumentModal
+              type={legalModalType}
+              onClose={() => setLegalModalType(null)}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>
