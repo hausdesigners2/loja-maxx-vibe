@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, ReactNode } fro
 import { AuthError, Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { formatAuthError, logSecurityEvent } from "@/lib/security";
-import * as OTPAuth from "otpauth";
+import { verifyTOTP } from "@/lib/totp";
 
 interface AuthContextValue {
   user: User | null;
@@ -184,17 +184,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!secret) return false;
 
     try {
-      const totp = new OTPAuth.TOTP({
-        issuer: "Lojas Maxx",
-        label: user?.email || "Admin",
-        algorithm: "SHA1",
-        digits: 6,
-        period: 30,
-        secret: secret,
-      });
-
-      const delta = totp.validate({ token: code, window: 1 });
-      if (delta !== null) {
+      const isValid = await verifyTOTP(secret, code);
+      if (isValid) {
         setIsAdmin2FAApproved(true);
         if (typeof window !== "undefined") {
           sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
@@ -212,17 +203,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!user) return false;
 
     try {
-      const totp = new OTPAuth.TOTP({
-        issuer: "Lojas Maxx",
-        label: user.email || "Admin",
-        algorithm: "SHA1",
-        digits: 6,
-        period: 30,
-        secret: secret,
-      });
-
-      const delta = totp.validate({ token: code, window: 1 });
-      if (delta !== null) {
+      const isValid = await verifyTOTP(secret, code);
+      if (isValid) {
         // Salva o segredo no perfil do cliente usando o campo complement
         const { error } = await supabase
           .from("customer_profiles")
