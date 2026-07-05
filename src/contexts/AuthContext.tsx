@@ -137,6 +137,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { data, error: error ? formatAuthError(error) : null, errorDetails: error };
   };
 
+  const signOut = async () => {
+    await supabase.auth.signOut();
+  };
+
   return (
     <AuthContext.Provider value={{ user, session, isAdmin, loading, signIn, signUp, signOut }}>
       {children}
