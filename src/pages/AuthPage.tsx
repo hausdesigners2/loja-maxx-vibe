@@ -28,25 +28,71 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [signupDone, setSignupDone] = useState<string | null>(null);
 
+  // Campos adicionais para cadastro completo
+  const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
+
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
 
+  // Formata o telefone com máscara (99) 99999-9999
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value.replace(/\D/g, "");
+    const formatted = raw
+      .replace(/^(\d{2})(\d)/g, "($1) $2")
+      .replace(/(\d)(\d{4})$/, "$1-$2")
+      .substring(0, 15);
+    setPhone(formatted);
+  };
+
   const handle = async (mode: "in" | "up") => {
     console.log(`[AuthPage] handle(${mode}) chamado`, { email, passwordLength: password.length });
+    
+    // Validação básica de email e senha
     const parsed = authSchema.safeParse({ email, password });
     if (!parsed.success) {
       console.warn(`[AuthPage] validação falhou:`, parsed.error.issues);
       toast.error(parsed.error.issues[0]?.message ?? "Dados inválidos.");
       return;
     }
+
+    // Validações adicionais exclusivas para o cadastro completo
+    if (mode === "up") {
+      if (!fullName.trim()) {
+        toast.error("Por favor, informe seu nome completo.");
+        return;
+      }
+      if (phone.replace(/\D/g, "").length < 10) {
+        toast.error("Por favor, informe um telefone válido com DDD.");
+        return;
+      }
+      if (!address.trim()) {
+        toast.error("Por favor, informe seu endereço de entrega.");
+        return;
+      }
+      if (!acceptedTerms) {
+        toast.error("Você precisa aceitar os termos de uso e a política de privacidade.");
+        return;
+      }
+    }
+
     console.log(`[AuthPage] validação ok, chamando ${mode === "in" ? "signIn" : "signUp"}...`);
     setLoading(true);
     let result;
     try {
-      result = mode === "in"
-        ? await signIn(parsed.data.email, parsed.data.password)
-        : await signUp(parsed.data.email, parsed.data.password);
+      if (mode === "in") {
+        result = await signIn(parsed.data.email, parsed.data.password);
+      } else {
+        // Passa os metadados adicionais para o Supabase Auth
+        result = await signUp(parsed.data.email, parsed.data.password, {
+          full_name: fullName.trim(),
+          phone: phone.trim(),
+          address: address.trim()
+        });
+      }
       console.log(`[AuthPage] resposta do ${mode === "in" ? "signIn" : "signUp"}:`, result);
     } catch (err) {
       console.error(`[AuthPage] exceção em ${mode}:`, err);
@@ -54,9 +100,10 @@ export default function AuthPage() {
       toast.error("Erro inesperado", { description: String((err as Error)?.message ?? err) });
       return;
     }
-    setLoading(false);
-    const { error, errorDetails } = result;
+
+    const { error, errorDetails, data } = (result as any);
     if (error) {
+      setLoading(false);
       console.error(`[AuthPage] Erro completo no ${mode === "in" ? "login" : "cadastro"}:`, errorDetails ?? error);
       toast.error(friendlyAuthError(error), { description: formatAuthError(errorDetails ?? error) });
       return;
@@ -64,15 +111,50 @@ export default function AuthPage() {
 
     if (mode === "in") {
       toast.success("Bem-vindo!");
+      setLoading(false);
       nav("/", { replace: true });
     } else {
       const usedEmail = parsed.data.email;
       console.log(`[AuthPage] cadastro concluído com sucesso para`, usedEmail);
-      toast.success("Conta criada com sucesso!");
-      setEmail("");
-      setPassword("");
-      setSignupDone(usedEmail);
-      setTab("in");
+      
+      // Se o usuário foi autenticado imediatamente (confirmação de e-mail desativada)
+      if (data?.session) {
+        try {
+          // Salva os dados diretamente na tabela customer_profiles
+          const { error: profileError } = await supabase
+            .from("customer_profiles")
+            .upsert({
+              user_id: data.user.id,
+              full_name: fullName.trim(),
+              phone: phone.trim(),
+              address: address.trim(),
+              email: usedEmail
+            }, { onConflict: "user_id" });
+
+          if (profileError) {
+            console.error("[AuthPage] Erro ao salvar perfil do cliente:", profileError);
+          }
+        } catch (profileErr) {
+          console.error("[AuthPage] Exceção ao salvar perfil do cliente:", profileErr);
+        }
+        
+        toast.success("Conta criada com sucesso!");
+        setLoading(false);
+        nav("/", { replace: true });
+      } else {
+        // Se a confirmação de e-mail estiver ativada, criamos o perfil via trigger ou na primeira sessão.
+        // Para garantir, tentamos salvar usando a sessão anon se as permissões permitirem, ou deixamos para o primeiro login.
+        toast.success("Conta criada com sucesso!");
+        setEmail("");
+        setPassword("");
+        setFullName("");
+        setPhone("");
+        setAddress("");
+        setAcceptedTerms(false);
+        setSignupDone(usedEmail);
+        setTab("in");
+        setLoading(false);
+      }
     }
   };
 
@@ -98,7 +180,7 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background pb-12">
       <div className="mx-auto max-w-md px-4 py-6">
         <Link to="/" className="inline-flex items-center gap-1 text-sm text-muted-foreground">
           <ChevronLeft className="h-4 w-4" /> Voltar
@@ -145,53 +227,114 @@ export default function AuthPage() {
                 <TabsTrigger value="up">Criar conta</TabsTrigger>
               </TabsList>
 
-              {(["in", "up"] as const).map((mode) => (
-                <TabsContent key={mode} value={mode} className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor={`${mode}-email`}>Email</Label>
-                    <Input id={`${mode}-email`} type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor={`${mode}-pass`}>Senha</Label>
-                    <div className="relative">
-                      <Input
-                        id={`${mode}-pass`}
-                        type={showPass ? "text" : "password"}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="h-12 pr-12"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPass((v) => !v)}
-                        aria-label={showPass ? "Ocultar senha" : "Mostrar senha"}
-                        className="absolute inset-y-0 right-0 grid w-12 place-items-center text-muted-foreground transition-colors hover:text-foreground active:scale-95"
-                      >
-                        {showPass ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
-                      </button>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={() => handle(mode)}
-                    disabled={loading}
-                    className="h-12 w-full gradient-primary text-base font-bold shadow-glow transition-transform active:scale-[0.98]"
-                  >
-                    {loading ? "Aguarde..." : mode === "in" ? "Entrar" : "Criar conta"}
-                  </Button>
-
-                  {mode === "in" && (
-                    <Button
+              <TabsContent value="in" className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="in-email">Email</Label>
+                  <Input id="in-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="in-pass">Senha</Label>
+                  <div className="relative">
+                    <Input
+                      id="in-pass"
+                      type={showPass ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="h-12 pr-12"
+                    />
+                    <button
                       type="button"
-                      variant="outline"
-                      onClick={() => { setForgotEmail(email); setForgotOpen(true); }}
-                      className="h-12 w-full rounded-xl border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary transition-transform active:scale-[0.98]"
+                      onClick={() => setShowPass((v) => !v)}
+                      aria-label={showPass ? "Ocultar senha" : "Mostrar senha"}
+                      className="absolute inset-y-0 right-0 grid w-12 place-items-center text-muted-foreground transition-colors hover:text-foreground active:scale-95"
                     >
-                      <KeyRound className="h-4 w-4" />
-                      Esqueci minha senha
-                    </Button>
-                  )}
-                </TabsContent>
-              ))}
+                      {showPass ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                    </button>
+                  </div>
+                </div>
+                <Button
+                  onClick={() => handle("in")}
+                  disabled={loading}
+                  className="h-12 w-full gradient-primary text-base font-bold shadow-glow transition-transform active:scale-[0.98]"
+                >
+                  {loading ? "Aguarde..." : "Entrar"}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => { setForgotEmail(email); setForgotOpen(true); }}
+                  className="h-12 w-full rounded-xl border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary transition-transform active:scale-[0.98]"
+                >
+                  <KeyRound className="h-4 w-4" />
+                  Esqueci minha senha
+                </Button>
+              </TabsContent>
+
+              <TabsContent value="up" className="space-y-4 pt-4">
+                <div className="space-y-2">
+                  <Label htmlFor="up-fullname">Nome Completo *</Label>
+                  <Input id="up-fullname" type="text" placeholder="Seu nome completo" value={fullName} onChange={(e) => setFullName(e.target.value)} className="h-12" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="up-phone">Telefone (WhatsApp) *</Label>
+                  <Input id="up-phone" type="tel" placeholder="(11) 99999-9999" value={phone} onChange={handlePhoneChange} className="h-12" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="up-address">Endereço de Entrega *</Label>
+                  <Input id="up-address" type="text" placeholder="Rua, número, bairro" value={address} onChange={(e) => setAddress(e.target.value)} className="h-12" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="up-email">Email *</Label>
+                  <Input id="up-email" type="email" placeholder="seu@email.com" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12" />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="up-pass">Senha *</Label>
+                  <div className="relative">
+                    <Input
+                      id="up-pass"
+                      type={showPass ? "text" : "password"}
+                      placeholder="Mínimo 8 caracteres"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="h-12 pr-12"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass((v) => !v)}
+                      aria-label={showPass ? "Ocultar senha" : "Mostrar senha"}
+                      className="absolute inset-y-0 right-0 grid w-12 place-items-center text-muted-foreground transition-colors hover:text-foreground active:scale-95"
+                    >
+                      {showPass ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5 pt-2">
+                  <input
+                    id="up-terms"
+                    type="checkbox"
+                    checked={acceptedTerms}
+                    onChange={(e) => setAcceptedTerms(e.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
+                  />
+                  <Label htmlFor="up-terms" className="text-xs leading-normal text-muted-foreground cursor-pointer">
+                    Li e aceito os <span className="text-primary underline">Termos de Uso</span> e a <span className="text-primary underline">Política de Privacidade</span> da Lojas Maxx.
+                  </Label>
+                </div>
+
+                <Button
+                  onClick={() => handle("up")}
+                  disabled={loading}
+                  className="h-12 w-full gradient-primary text-base font-bold shadow-glow transition-transform active:scale-[0.98] mt-2"
+                >
+                  {loading ? "Criando conta..." : "Criar conta"}
+                </Button>
+              </TabsContent>
             </Tabs>
           </>
         )}

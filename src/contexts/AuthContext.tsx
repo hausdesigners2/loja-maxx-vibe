@@ -9,7 +9,7 @@ interface AuthContextValue {
   isAdmin: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null; errorDetails?: AuthError | null }>;
-  signUp: (email: string, password: string) => Promise<{ error: string | null; errorDetails?: AuthError | null }>;
+  signUp: (email: string, password: string, metadata?: Record<string, any>) => Promise<{ data: any; error: string | null; errorDetails?: AuthError | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -119,11 +119,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error ? formatAuthError(error) : null, errorDetails: error };
   };
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: string, password: string, metadata?: Record<string, any>) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: `${window.location.origin}/` },
+      options: { 
+        emailRedirectTo: `${window.location.origin}/`,
+        data: metadata
+      },
     });
     if (error) {
       console.error("Lovable Cloud auth signup error:", error);
@@ -131,13 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       void logSecurityEvent("signup_success", { email, userId: data.user?.id });
     }
-    return { error: error ? formatAuthError(error) : null, errorDetails: error };
-  };
-
-  const signOut = async () => {
-    const current = session?.user;
-    if (current) await logSecurityEvent("logout", { userId: current.id, email: current.email });
-    await supabase.auth.signOut();
+    return { data, error: error ? formatAuthError(error) : null, errorDetails: error };
   };
 
   return (
