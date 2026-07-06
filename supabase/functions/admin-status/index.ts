@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.105.1";
+import { rateLimit, SECURITY_POLICIES, generateRateLimitResponse, injectRateLimitHeaders } from "../_shared/rateLimiter.ts"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -8,6 +9,16 @@ const corsHeaders = {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Captura o IP do cliente de forma segura
+  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
+
+  // Aplica a política de segurança global (máximo 100 requisições por minuto)
+  const rateLimitResult = await rateLimit(clientIp, "admin-status", SECURITY_POLICIES.GLOBAL);
+  if (!rateLimitResult.allowed) {
+    console.warn(`[admin-status] Rate limit excedido para o IP: ${clientIp}`);
+    return generateRateLimitResponse(rateLimitResult);
   }
 
   try {
@@ -39,7 +50,10 @@ Deno.serve(async (req) => {
 
     if (error) throw error;
 
-    return Response.json({ isAdmin: data?.role === "admin" }, { headers: corsHeaders });
+    const headers = new Headers({ ...corsHeaders, "Content-Type": "application/json" });
+    injectRateLimitHeaders(headers, rateLimitResult);
+
+    return new Response(JSON.stringify({ isAdmin: data?.role === "admin" }), { headers });
   } catch (error) {
     console.error("admin-status error", error);
     return Response.json({ isAdmin: false }, { status: 500, headers: corsHeaders });

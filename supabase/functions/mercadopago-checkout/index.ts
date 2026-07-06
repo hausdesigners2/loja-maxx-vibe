@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import { rateLimit, SECURITY_POLICIES, generateRateLimitResponse, injectRateLimitHeaders } from "../_shared/rateLimiter.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,6 +10,16 @@ const corsHeaders = {
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
+  }
+
+  // Captura o IP do cliente de forma segura
+  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
+
+  // Aplica a política de segurança restrita para rotas sensíveis (máximo 5 tentativas em 15 minutos)
+  const rateLimitResult = await rateLimit(clientIp, "mercadopago-checkout", SECURITY_POLICIES.SENSITIVE);
+  if (!rateLimitResult.allowed) {
+    console.warn(`[mercadopago-checkout] Rate limit excedido para o IP: ${clientIp}`);
+    return generateRateLimitResponse(rateLimitResult);
   }
 
   try {
@@ -76,9 +87,11 @@ serve(async (req) => {
     // Se o pedido já estiver pago, retorna sucesso imediatamente
     if (order.status === "paid") {
       console.log("[mercadopago-checkout] Pedido já está pago.");
+      const headers = new Headers({ ...corsHeaders, "Content-Type": "application/json" });
+      injectRateLimitHeaders(headers, rateLimitResult);
       return new Response(JSON.stringify({ success: true, already_paid: true }), {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
+        headers
       });
     }
 
@@ -211,6 +224,9 @@ serve(async (req) => {
       console.error("[mercadopago-checkout] Erro ao atualizar pedido no banco:", dbErr);
     }
 
+    const headers = new Headers({ ...corsHeaders, "Content-Type": "application/json" });
+    injectRateLimitHeaders(headers, rateLimitResult);
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -222,7 +238,7 @@ serve(async (req) => {
       }),
       {
         status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
+        headers
       }
     );
 
