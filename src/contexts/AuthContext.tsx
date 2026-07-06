@@ -10,7 +10,7 @@ interface AuthContextValue {
   isAdmin: boolean;
   isAdmin2FAApproved: boolean;
   loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: string | null; errorDetails?: AuthError | null }>;
+  signIn: (email: string, password: string) => Promise<{ data: any; error: string | null; errorDetails?: AuthError | null }>;
   signUp: (email: string, password: string, metadata?: Record<string, any>) => Promise<{ data: any; error: string | null; errorDetails?: AuthError | null }>;
   signOut: () => Promise<void>;
   verifyAdmin2FA: (code: string) => Promise<boolean>;
@@ -131,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } else {
       void logSecurityEvent("login_success", { email, userId: data.user?.id });
     }
-    return { error: error ? formatAuthError(error) : null, errorDetails: error };
+    return { data, error: error ? formatAuthError(error) : null, errorDetails: error };
   };
 
   const signUp = async (email: string, password: string, metadata?: Record<string, any>) => {

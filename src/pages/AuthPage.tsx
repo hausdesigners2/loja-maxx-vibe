@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronLeft, ShoppingBag, CheckCircle2, Eye, EyeOff, KeyRound, AlertCircle } from "lucide-react";
+import { ChevronLeft, ShoppingBag, CheckCircle2, Eye, EyeOff, KeyRound, AlertCircle, Copy, Check } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { LegalDocumentModal, TERMS_VERSION, PRIVACY_VERSION } from "@/components/LegalDocuments";
 
 export default function AuthPage() {
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, verifyAdmin2FA, setupAdmin2FA, signOut } = useAuth();
   const nav = useNavigate();
   const [tab, setTab] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
@@ -42,6 +42,13 @@ export default function AuthPage() {
 
   // Estados para os Modais de Termos e Privacidade
   const [legalModalType, setLegalModalType] = useState<"terms" | "privacy" | null>(null);
+
+  // Estados exclusivos para 2FA do Administrador na tela de Login
+  const [showAdmin2FA, setShowAdmin2FA] = useState(false);
+  const [admin2FACode, setAdmin2FACode] = useState("");
+  const [admin2FASecret, setAdmin2FASecret] = useState<string | null>(null);
+  const [hasSecret, setHasSecret] = useState<boolean | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // Formata o telefone com máscara (99) 99999-9999
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -128,6 +135,49 @@ export default function AuthPage() {
     }
 
     if (mode === "in") {
+      if (data?.user) {
+        // Verifica se o usuário que está logando é administrador
+        const { data: isAdminRole, error: roleError } = await supabase.rpc("has_role", {
+          _user_id: data.user.id,
+          _role: "admin"
+        });
+
+        if (!roleError && isAdminRole === true) {
+          // É administrador! Checar se já tem 2FA aprovado nesta aba/sessão
+          const isApproved = sessionStorage.getItem("loja-maxx-admin-2fa-approved") === "true";
+          if (!isApproved) {
+            // Verifica se o admin já tem uma chave 2FA configurada em seu perfil
+            const { data: profileData } = await supabase
+              .from("customer_profiles")
+              .select("complement")
+              .eq("user_id", data.user.id)
+              .maybeSingle();
+
+            const existingSecret = profileData?.complement?.startsWith("[2FA]:")
+              ? profileData.complement.replace("[2FA]:", "").trim()
+              : null;
+
+            if (existingSecret) {
+              setAdmin2FASecret(existingSecret);
+              setHasSecret(true);
+            } else {
+              // Caso não tenha segredo, inicia o fluxo de configuração do 2FA
+              const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+              let newSecret = "";
+              for (let i = 0; i < 16; i++) {
+                newSecret += chars.charAt(Math.floor(Math.random() * chars.length));
+              }
+              setAdmin2FASecret(newSecret);
+              setHasSecret(false);
+            }
+
+            setShowAdmin2FA(true);
+            setLoading(false);
+            return; // Pausa o login normal e exibe a tela de 2FA obrigatória
+          }
+        }
+      }
+
       toast.success("Bem-vindo!");
       setLoading(false);
       nav("/", { replace: true });
@@ -236,7 +286,172 @@ export default function AuthPage() {
               </Button>
             </div>
           </div>
+        ) : showAdmin2FA ? (
+          /* TELA 2FA OBRIGATÓRIA PARA ADMINISTRADORES */
+          (() => {
+            const qrCodeUrl = `https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=${encodeURIComponent(
+              `otpauth://totp/Lojas%20Maxx:${email || "Admin"}?secret=${admin2FASecret}&issuer=Lojas%20Maxx`
+            )}`;
+
+            const handleVerify2FA = async (e: React.FormEvent) => {
+              e.preventDefault();
+              if (admin2FACode.length !== 6) {
+                toast.error("O código deve ter exatamente 6 dígitos.");
+                return;
+              }
+
+              setLoading(true);
+              const success = await verifyAdmin2FA(admin2FACode);
+              setLoading(false);
+
+              if (success) {
+                toast.success("Acesso administrativo liberado!");
+                nav("/admin", { replace: true });
+              } else {
+                toast.error("Código inválido. Tente novamente.");
+                setAdmin2FACode("");
+              }
+            };
+
+            const handleSetup2FA = async (e: React.FormEvent) => {
+              e.preventDefault();
+              if (admin2FACode.length !== 6) {
+                toast.error("O código deve ter exatamente 6 dígitos.");
+                return;
+              }
+
+              setLoading(true);
+              const success = await setupAdmin2FA(admin2FASecret!, admin2FACode);
+              setLoading(false);
+
+              if (success) {
+                toast.success("MFA configurado e ativado com sucesso!");
+                nav("/admin", { replace: true });
+              } else {
+                toast.error("Código de ativação inválido. Verifique o aplicativo.");
+                setAdmin2FACode("");
+              }
+            };
+
+            const copySecret = () => {
+              if (!admin2FASecret) return;
+              navigator.clipboard.writeText(admin2FASecret);
+              setCopied(true);
+              toast.success("Chave copiada para a área de transferência!");
+              setTimeout(() => setCopied(false), 2000);
+            };
+
+            return (
+              <div className="mt-6 space-y-6 animate-fade-in bg-card p-6 rounded-2xl border border-border/50">
+                <div className="text-center space-y-2">
+                  <h2 className="text-xl font-bold">🔒 Verificação de Segurança (2FA)</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {hasSecret 
+                      ? "Insira o código de 6 dígitos do seu aplicativo autenticador para acessar sua conta administrativa." 
+                      : "Configure a autenticação em duas etapas para proteger sua conta administrativa."}
+                  </p>
+                </div>
+
+                {hasSecret ? (
+                  /* VERIFICAÇÃO */
+                  <form onSubmit={handleVerify2FA} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="auth-2fa-code" className="text-sm font-bold">Código de 6 dígitos</Label>
+                      <Input
+                        id="auth-2fa-code"
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={6}
+                        placeholder="000000"
+                        value={admin2FACode}
+                        onChange={(e) => setAdmin2FACode(e.target.value.replace(/\D/g, ""))}
+                        className="h-12 text-center text-2xl font-bold tracking-[0.5em] pl-[0.5em]"
+                        autoFocus
+                      />
+                    </div>
+
+                    <Button
+                      type="submit"
+                      disabled={loading || admin2FACode.length !== 6}
+                      className="w-full h-12 gradient-primary font-bold shadow-glow text-base"
+                    >
+                      {loading ? "Verificando..." : "Validar e Acessar"}
+                    </Button>
+                  </form>
+                ) : (
+                  /* CONFIGURAÇÃO */
+                  <div className="space-y-5">
+                    <div className="flex flex-col items-center space-y-3">
+                      <div className="bg-white p-2 rounded-xl aspect-square w-40 h-40 flex items-center justify-center shadow-md">
+                        <img src={qrCodeUrl} alt="QR Code de Configuração" className="w-full h-full object-contain" />
+                      </div>
+                      <p className="text-xs text-muted-foreground max-w-xs text-center">
+                        Escaneie o QR Code acima com o <strong>Google Authenticator</strong> ou <strong>Authy</strong>.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wider">Ou insira a chave manualmente</Label>
+                      <div className="relative flex items-center rounded-xl bg-secondary/40 p-3 border border-border/50">
+                        <span className="text-xs font-mono truncate pr-10 select-all flex-1 text-left">
+                          {admin2FASecret}
+                        </span>
+                        <button
+                          onClick={copySecret}
+                          className="absolute right-2 grid h-8 w-8 place-items-center rounded-lg bg-primary text-primary-foreground shadow-glow transition active:scale-95"
+                          title="Copiar chave"
+                        >
+                          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleSetup2FA} className="space-y-4 pt-2 border-t border-border/50">
+                      <div className="space-y-2">
+                        <Label htmlFor="auth-setup-code" className="text-sm font-bold">Digite o código gerado para ativar</Label>
+                        <Input
+                          id="auth-setup-code"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          maxLength={6}
+                          placeholder="000000"
+                          value={admin2FACode}
+                          onChange={(e) => setAdmin2FACode(e.target.value.replace(/\D/g, ""))}
+                          className="h-12 text-center text-2xl font-bold tracking-[0.5em] pl-[0.5em]"
+                        />
+                      </div>
+
+                      <Button
+                        type="submit"
+                        disabled={loading || admin2FACode.length !== 6}
+                        className="w-full h-12 gradient-primary font-bold shadow-glow text-base"
+                      >
+                        {loading ? "Ativando..." : "Ativar e Acessar"}
+                      </Button>
+                    </form>
+                  </div>
+                )}
+
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    setShowAdmin2FA(false);
+                    setAdmin2FACode("");
+                    setAdmin2FASecret(null);
+                    setHasSecret(null);
+                    await signOut();
+                  }}
+                  className="w-full h-11 text-xs gap-2 border-border hover:bg-secondary"
+                >
+                  Voltar para o login
+                </Button>
+              </div>
+            );
+          })()
         ) : (
+          /* FORMULÁRIO DE LOGIN NORMAL */
           <>
             <Tabs value={tab} onValueChange={(v) => { setTab(v as "in" | "up"); setShowPass(false); setValidationError(null); }} className="mt-6">
               <TabsList className="grid w-full grid-cols-2">
