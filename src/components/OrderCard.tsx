@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Printer, Check, X, Truck, CreditCard, Eye, ChevronDown, ChevronUp } from "lucide-react";
 import { OrderRow } from "@/pages/AdminDashboardPage";
 import { formatBRL } from "@/lib/format";
 import { printOrder } from "@/lib/printOrder";
 import { Button } from "@/components/ui/button";
-import { useNotificationSound } from "@/hooks/useNotificationSound";
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pendente",
@@ -28,18 +27,7 @@ interface OrderCardProps {
 }
 
 export function OrderCard({ order, onStatus }: OrderCardProps) {
-  const { settings, playSound, isOrderNotified, markOrderAsNotified } = useNotificationSound();
   const [expanded, setExpanded] = useState(false);
-  const [isNew, setIsNew] = useState(!isOrderNotified(order.id));
-
-  // When component mounts, if order is new, play sound and mark as notified
-  useEffect(() => {
-    if (isNew && settings.enabled) {
-      playSound();
-      markOrderAsNotified(order.id);
-      setIsNew(false);
-    }
-  }, [isNew, settings.enabled, playSound, markOrderAsNotified, order.id]);
 
   return (
     <div className="rounded-2xl bg-card p-4 text-sm space-y-3 border border-border/40">
@@ -58,11 +46,6 @@ export function OrderCard({ order, onStatus }: OrderCardProps) {
           <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold mt-1 ${STATUS_COLORS[order.status] ?? "bg-muted"}`}>
             {STATUS_LABELS[order.status] ?? order.status}
           </span>
-          {isNew && (
-            <span className="inline-block ml-2 rounded-full bg-primary/20 text-primary px-2 py-0.5 text-xs font-bold">
-              NOVO
-            </span>
-          )}
         </div>
       </div>
 
@@ -165,10 +148,6 @@ export function OrderCard({ order, onStatus }: OrderCardProps) {
                 <span className="font-semibold">{formatBRL(Number(it.subtotal))}</span>
               </div>
             ))}
-          </div>
-          <div className="flex justify-between border-t border-border pt-3 text-base font-bold">
-            <span>Total</span>
-            <span className="text-primary">{formatBRL(Number(order.total))}</span>
           </div>
         </div>
       )}
