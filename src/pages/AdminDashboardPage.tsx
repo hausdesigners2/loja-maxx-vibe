@@ -92,16 +92,48 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (!isAdmin) return;
     fetchAll();
+
+    // Realtime listener for new orders
     const channel = supabase
-      .channel("admin-orders")
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
-        fetchAll();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "order_items" }, () => {
-        fetchAll();
-      })
+      .channel("orders-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "orders",
+        },
+        (payload) => {
+          const newOrder = payload.new as OrderRow;
+          // Add to orders list at top
+          setOrders((prev) => [newOrder, ...prev]);
+          // Notification will be handled by OrderCard via useNotificationSound hook
+          toast.success("Novo pedido recebido!", { description: `Pedido #${newOrder.order_number ?? newOrder.id.slice(0, 8)}` });
+        }
+      )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    // Also listen for updates to keep status in sync (optional)
+    const updateChannel = supabase
+      .channel("orders-updates")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "orders",
+        },
+        () => {
+          // Refetch to keep list accurate
+          fetchAll();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+      supabase.removeChannel(updateChannel);
+    };
   }, [isAdmin]);
 
   const updateStatus = async (id: string, status: string) => {
@@ -343,7 +375,7 @@ export default function AdminDashboardPage() {
                       </div>
                     </div>
                   );
-                })}
+                }}
               </div>
 
               {/* Pagination Controls */}
@@ -387,7 +419,7 @@ export default function AdminDashboardPage() {
                     <TrendingUp className="h-3 w-3" /> {formatBRL(r.total)}
                   </div>
                 </div>
-              ))}
+              )}
             </TabsContent>
 
             <TabsContent value="searches" className="space-y-1 pt-4">
