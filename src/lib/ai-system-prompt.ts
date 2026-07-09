@@ -82,7 +82,7 @@ export function isInputSafe(input: string): boolean {
     /developer\s+mode/i,
     /jailbreak/i,
     /system\s*:\s*/i,
-    /\\n\\s*\\n\s*\\n/i, // multiple newlines often used to break context
+    /\n\s*\n\s*\n/i, // multiple newlines often used to break context
     /<script/i,
     /javascript:/i,
     /data:/i,
