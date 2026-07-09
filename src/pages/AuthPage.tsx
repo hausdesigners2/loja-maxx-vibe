@@ -20,7 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { LegalDocumentModal, TERMS_VERSION, PRIVACY_VERSION } from "@/components/LegalDocuments";
 
 export default function AuthPage() {
-  const { signIn, signUp, verifyAdmin2FA, setupAdmin2FA, signOut, checkResetRateLimit } = useAuth();
+  const { signIn, signUp, verifyAdmin2FA, setupAdmin2FA, signOut } = useAuth();
   const nav = useNavigate();
   const [tab, setTab] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
@@ -84,7 +84,7 @@ export default function AuthPage() {
         toast.error("Por favor, informe seu nome completo.");
         return;
       }
-      if (phone.replace(/\D, "").length < 10) {
+      if (phone.replace(/\D/g, "").length < 10) {
         toast.error("Por favor, informe um telefone válido com DDD.");
         return;
       }
@@ -229,13 +229,6 @@ export default function AuthPage() {
     const parsed = emailSchema.safeParse(forgotEmail);
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? "Email inválido.");
-      return;
-    }
-    // Rate limit check for password reset based on email
-    const { allowed, retryAfter } = await checkResetRateLimit(forgotEmail.toLowerCase().trim());
-    if (!allowed) {
-      const waitMinutes = Math.ceil((retryAfter ?? 0) / 60);
-      toast.error(`Muitas tentativas de recuperação de senha. Por favor, aguarde ${waitMinutes} minuto(s) antes de tentar novamente.`);
       return;
     }
     setForgotLoading(true);

@@ -16,8 +16,6 @@ interface AuthContextValue {
   verifyAdmin2FA: (code: string) => Promise<boolean>;
   setupAdmin2FA: (secret: string, code: string) => Promise<boolean>;
   getAdmin2FASecret: () => Promise<string | null>;
-  checkLoginRateLimit: (identifier: string) => Promise<{ allowed: boolean; retryAfter?: number }>;
-  checkResetRateLimit: (identifier: string) => Promise<{ allowed: boolean; retryAfter?: number }>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -125,46 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return admin;
   };
 
-  // Helper to call rate limit edge functions
-  const checkLoginRateLimit = async (identifier: string): Promise<{ allowed: boolean; retryAfter?: number }> => {
-    try {
-      const { data, error } = await supabase.functions.invoke("login-rate-limit", {
-        body: { identifier, attempt_type: "login" }
-      });
-      if (error) throw error;
-      return { allowed: data.allowed, retryAfter: data.retryAfter };
-    } catch (err) {
-      console.error("Failed to check login rate limit:", err);
-      // Fail open: allow request if we cannot reach the edge function
-      return { allowed: true };
-    }
-  };
-
-  const checkResetRateLimit = async (identifier: string): Promise<{ allowed: boolean; retryAfter?: number }> => {
-    try {
-      const { data, error } = await supabase.functions.invoke("password-reset-rate-limit", {
-        body: { identifier }
-      });
-      if (error) throw error;
-      return { allowed: data.allowed, retryAfter: data.retryAfter };
-    } catch (err) {
-      console.error("Failed to check password reset rate limit:", err);
-      return { allowed: true };
-    }
-  };
-
   const signIn = async (email: string, password: string) => {
-    // Rate limit check based on email (identifier)
-    const { allowed, retryAfter } = await checkLoginRateLimit(email.toLowerCase().trim());
-    if (!allowed) {
-      const waitMinutes = Math.ceil((retryAfter ?? 0) / 60);
-      return {
-        data: null,
-        error: `Muitas tentativas de login. Por favor, aguarde ${waitMinutes} minuto(s) antes de tentar novamente.`,
-        errorDetails: { status: 429, message: `Rate limit exceeded. Try again after ${waitMinutes} minute(s).` }
-      };
-    }
-
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       console.error("Lovable Cloud auth login error:", error);
@@ -273,21 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      session, 
-      isAdmin, 
-      isAdmin2FAApproved, 
-      loading, 
-      signIn, 
-      signUp, 
-      signOut, 
-      verifyAdmin2FA, 
-      setupAdmin2FA, 
-      getAdmin2FASecret,
-      checkLoginRateLimit,
-      checkResetRateLimit
-    }}>
+    <AuthContext.Provider value={{ user, session, isAdmin, isAdmin2FAApproved, loading, signIn, signUp, signOut, verifyAdmin2FA, setupAdmin2FA, getAdmin2FASecret }}>
       {children}
     </AuthContext.Provider>
   );
