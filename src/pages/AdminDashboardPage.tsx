@@ -76,85 +76,6 @@ export default function AdminDashboardPage() {
 
   // Clientes Tab States
   const [customerSearch, setCustomerSearch] = useState("");
-  const [customerFilter, setCustomerFilter]<dyad-write path="src/pages/AdminDashboardPage.tsx" description="Complete implementation of AdminDashboardPage with sound notifications, real-time order alerts, and notification settings panel">
-import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate } from "react-router-dom";
-import { ChevronLeft, Users, Package, TrendingUp, Search, Calendar, Clock, Volume2, CheckCheck } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/contexts/AuthContext";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { formatBRL } from "@/lib/format";
-import { toast } from "sonner";
-import { OrderCard } from "@/components/OrderCard";
-import { Admin2FAGuard } from "@/components/Admin2FAGuard";
-import { useAdminNotificationSettings } from "@/hooks/useAdminNotificationSettings";
-import { AdminNotificationSettingsPanel } from "@/components/AdminNotificationSettingsPanel";
-
-interface Customer {
-  id: string;
-  user_id: string;
-  full_name: string;
-  phone: string;
-  email: string | null;
-  address: string;
-  complement: string;
-  city: string;
-  state: string;
-  zip: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface OrderItemRow { product_name: string; quantity: number; subtotal: number; unit_price?: number }
-
-export interface OrderRow {
-  id: string;
-  order_number: number | null;
-  customer_name: string;
-  customer_phone: string;
-  customer_address: string;
-  customer_complement: string | null;
-  customer_city: string | null;
-  customer_state: string | null;
-  total: number;
-  status: string;
-  payment_method: string;
-  change_for: number | null;
-  notes: string | null;
-  created_at: string;
-  order_items: OrderItemRow[];
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "Pendente",
-  paid: "Pago",
-  delivered: "Entregue",
-  cancelled: "Cancelado",
-  awaiting_machine: "À receber na Maquininha",
-};
-
-export default function AdminDashboardPage() {
-  const { user, isAdmin, loading } = useAuth();
-  const { settings, triggerNotificationSound } = useAdminNotificationSettings();
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [recentSearches, setRecentSearches] = useState<{ term: string; created_at: string; results_count: number }[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
-
-  // Tracking read/unread orders using LocalStorage
-  const [readOrderIds, setReadOrderIds] = useState<Set<string>>(() => {
-    try {
-      const raw = localStorage.getItem("loja-maxx-read-orders");
-      return raw ? new Set(JSON.parse(raw)) : new Set();
-    } catch {
-      return new Set();
-    }
-  });
-
-  // Clientes Tab States
-  const [customerSearch, setCustomerSearch] = useState("");
   const [customerFilter, setCustomerFilter] = useState<"all" | "with_orders" | "without_orders" | "recent">("all");
   const [customerPage, setCustomerPage] = useState(1);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
@@ -271,8 +192,9 @@ export default function AdminDashboardPage() {
   const updateStatus = async (id: string, status: string) => {
     // Automatically mark read when changing its status
     markAsRead(id);
-    const { error } = await supabase.from("orders").update({ status }).eq("id", id);
-    if (error) toast.error("Falha ao atualizar status");
+    const { error } = await supabase.from("orders").update({ status }).eq("id(order_items)" as any).eq("id", id);
+    const { error: updErr } = await supabase.from("orders").update({ status }).eq("id", id);
+    if (updErr) toast.error("Falha ao atualizar status");
     else toast.success(`Status: ${STATUS_LABELS[status] ?? status}`);
   };
 
