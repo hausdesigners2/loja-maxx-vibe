@@ -21,6 +21,7 @@ import AdminDashboardPage from "./pages/AdminDashboardPage";
 import PixPaymentPage from "./pages/PixPaymentPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
+import AdminSoundsPage from "./pages/AdminSoundsPage";
 
 const queryClient = new QueryClient();
 
@@ -48,6 +49,7 @@ const App = () => (
               <Route path="/pagamento/pix/:orderId" element={<PixPaymentPage />} />
               <Route path="/termos-de-uso" element={<TermsPage />} />
               <Route path="/politica-de-privacidade" element={<PrivacyPage />} />
+              <Route path="/admin/sounds" element={<AdminSoundsPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

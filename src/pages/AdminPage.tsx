@@ -191,6 +191,9 @@ export default function AdminPage() {
               <Link to="/admin/banners" className="pb-2 text-sm font-medium text-muted-foreground">
                 Banners
               </Link>
+              <Link to="/admin/sounds" className="pb-2 text-sm font-medium text-muted-foreground">
+                Sons
+              </Link>
             </div>
           </div>
         </header>
