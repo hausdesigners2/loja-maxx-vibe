@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
-import { ChevronLeft, Users, Package, TrendingUp, Search, Printer, Check, X, Truck, CreditCard, Trash2, Eye, Calendar, Clock } from "lucide-react";
+import { ChevronLeft, Users, Package, TrendingUp, Search, Calendar, Clock, Volume2, CheckCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatBRL } from "@/lib/format";
 import { toast } from "sonner";
-import { printOrder } from "@/lib/printOrder";
 import { OrderCard } from "@/components/OrderCard";
 import { Admin2FAGuard } from "@/components/Admin2FAGuard";
+import { useAdminNotificationSettings } from "@/hooks/useAdminNotificationSettings";
+import { AdminNotificationSettingsPanel } from "@/components/AdminNotificationSettingsPanel";
 
 interface Customer {
   id: string;
@@ -55,20 +56,102 @@ const STATUS_LABELS: Record<string, string> = {
   awaiting_machine: "À receber na Maquininha",
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-yellow-500/20 text-yellow-500",
-  paid: "bg-green-500/20 text-green-500",
-  delivered: "bg-blue-500/20 text-blue-500",
-  cancelled: "bg-red-500/20 text-red-500",
-  awaiting_machine: "bg-orange-500/20 text-orange-500",
-};
-
 export default function AdminDashboardPage() {
   const { user, isAdmin, loading } = useAuth();
+  const { settings, triggerNotificationSound } = useAdminNotificationSettings();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [recentSearches, setRecentSearches] = useState<{ term: string; created_at: string; results_count: number }[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Tracking read/unread orders using LocalStorage
+  const [readOrderIds, setReadOrderIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("loja-maxx-read-orders");
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
+
+  // Clientes Tab States
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerFilter, setCustomerFilter]<dyad-write path="src/pages/AdminDashboardPage.tsx" description="Complete implementation of AdminDashboardPage with sound notifications, real-time order alerts, and notification settings panel">
+import { useEffect, useMemo, useState } from "react";
+import { Link, Navigate } from "react-router-dom";
+import { ChevronLeft, Users, Package, TrendingUp, Search, Calendar, Clock, Volume2, CheckCheck } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { formatBRL } from "@/lib/format";
+import { toast } from "sonner";
+import { OrderCard } from "@/components/OrderCard";
+import { Admin2FAGuard } from "@/components/Admin2FAGuard";
+import { useAdminNotificationSettings } from "@/hooks/useAdminNotificationSettings";
+import { AdminNotificationSettingsPanel } from "@/components/AdminNotificationSettingsPanel";
+
+interface Customer {
+  id: string;
+  user_id: string;
+  full_name: string;
+  phone: string;
+  email: string | null;
+  address: string;
+  complement: string;
+  city: string;
+  state: string;
+  zip: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OrderItemRow { product_name: string; quantity: number; subtotal: number; unit_price?: number }
+
+export interface OrderRow {
+  id: string;
+  order_number: number | null;
+  customer_name: string;
+  customer_phone: string;
+  customer_address: string;
+  customer_complement: string | null;
+  customer_city: string | null;
+  customer_state: string | null;
+  total: number;
+  status: string;
+  payment_method: string;
+  change_for: number | null;
+  notes: string | null;
+  created_at: string;
+  order_items: OrderItemRow[];
+}
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Pendente",
+  paid: "Pago",
+  delivered: "Entregue",
+  cancelled: "Cancelado",
+  awaiting_machine: "À receber na Maquininha",
+};
+
+export default function AdminDashboardPage() {
+  const { user, isAdmin, loading } = useAuth();
+  const { settings, triggerNotificationSound } = useAdminNotificationSettings();
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [recentSearches, setRecentSearches] = useState<{ term: string; created_at: string; results_count: number }[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  // Tracking read/unread orders using LocalStorage
+  const [readOrderIds, setReadOrderIds] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem("loja-maxx-read-orders");
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch {
+      return new Set();
+    }
+  });
 
   // Clientes Tab States
   const [customerSearch, setCustomerSearch] = useState("");
@@ -89,22 +172,105 @@ export default function AdminDashboardPage() {
     setRecentSearches((searches ?? []).slice(0, 50));
   };
 
+  // Real-time integration & initial load
   useEffect(() => {
     if (!isAdmin) return;
     fetchAll();
+
     const channel = supabase
       .channel("admin-orders")
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
-        fetchAll();
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "order_items" }, () => {
-        fetchAll();
-      })
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "orders" },
+        (payload: any) => {
+          const newOrder = payload.new;
+          
+          // Play sound immediately when configured
+          triggerNotificationSound();
+
+          // Show rich toast notification with action
+          toast.success(`Novo Pedido #${newOrder.order_number || newOrder.id.slice(0, 8)} recebido!`, {
+            description: `Cliente: ${newOrder.customer_name} - ${formatBRL(Number(newOrder.total))}`,
+            duration: 10000,
+            action: {
+              label: "Ver",
+              onClick: () => {
+                setSearchTerm(String(newOrder.order_number || newOrder.id.slice(0, 8)));
+                // Mark as read immediately on click
+                markAsRead(newOrder.id);
+              }
+            }
+          });
+
+          fetchAll();
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "orders" },
+        (payload: any) => {
+          if (payload.eventType !== "INSERT") {
+            fetchAll();
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "order_items" },
+        () => {
+          fetchAll();
+        }
+      )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [isAdmin]);
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAdmin, triggerNotificationSound]);
+
+  // Repeat sound effect when enabled and unread orders exist
+  useEffect(() => {
+    if (!settings.enabled || !settings.repeatUntilRead || orders.length === 0) return;
+
+    // Check if there's any unread order in the list
+    const hasUnread = orders.some(o => !readOrderIds.has(o.id));
+    if (!hasUnread) return;
+
+    const interval = setInterval(() => {
+      triggerNotificationSound();
+    }, 10000); // 10 seconds interval
+
+    return () => clearInterval(interval);
+  }, [orders, readOrderIds, settings.enabled, settings.repeatUntilRead, triggerNotificationSound]);
+
+  // Handle marking single order as read
+  const markAsRead = (id: string) => {
+    setReadOrderIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      try {
+        localStorage.setItem("loja-maxx-read-orders", JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+  };
+
+  // Mark all orders currently visible/fetched as read
+  const markAllAsRead = () => {
+    setReadOrderIds((prev) => {
+      const next = new Set(prev);
+      orders.forEach(o => next.add(o.id));
+      try {
+        localStorage.setItem("loja-maxx-read-orders", JSON.stringify([...next]));
+      } catch {}
+      return next;
+    });
+    toast.success("Todos os pedidos foram marcados como vistos!");
+  };
 
   const updateStatus = async (id: string, status: string) => {
+    // Automatically mark read when changing its status
+    markAsRead(id);
     const { error } = await supabase.from("orders").update({ status }).eq("id", id);
     if (error) toast.error("Falha ao atualizar status");
     else toast.success(`Status: ${STATUS_LABELS[status] ?? status}`);
@@ -183,7 +349,6 @@ export default function AdminDashboardPage() {
         return !hasOrders;
       });
     } else if (customerFilter === "recent") {
-      // Sort by created_at descending
       list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     }
 
@@ -207,6 +372,10 @@ export default function AdminDashboardPage() {
     setSelectedCustomer(c);
     setIsDetailsOpen(true);
   };
+
+  const unreadCount = useMemo(() => {
+    return orders.filter(o => !readOrderIds.has(o.id)).length;
+  }, [orders, readOrderIds]);
 
   if (loading) return <div className="p-8 text-center text-sm text-muted-foreground">Carregando...</div>;
   if (!user) return <Navigate to="/auth" replace />;
@@ -234,29 +403,61 @@ export default function AdminDashboardPage() {
           <div className="mb-4 grid grid-cols-3 gap-2">
             <Stat icon={<Users className="h-4 w-4" />} label="Clientes" v={customers.length} />
             <Stat icon={<Package className="h-4 w-4" />} label="Pedidos" v={orders.length} />
-            <Stat icon={<Search className="h-4 w-4" />} label="Buscas" v={recentSearches.length} />
+            <Stat icon={<Volume2 className="h-4 w-4 text-primary" />} label="Som Alerta" v={settings.enabled ? "Ativo" : "Mudo"} />
           </div>
 
           <Tabs defaultValue="orders">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="orders">Pedidos</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-5 gap-1 select-none">
+              <TabsTrigger value="orders" className="relative">
+                <span>Pedidos</span>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground animate-bounce">
+                    {unreadCount}
+                  </span>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="customers">Clientes</TabsTrigger>
               <TabsTrigger value="ranking">Ranking</TabsTrigger>
               <TabsTrigger value="searches">Buscas</TabsTrigger>
+              <TabsTrigger value="sound">Sons</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="orders" className="space-y-2 pt-4">
-              <input
-                type="search"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar por nome, telefone ou nº pedido"
-                className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm"
-              />
+            <TabsContent value="orders" className="space-y-4 pt-4">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="search"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Buscar por nome, telefone ou nº pedido..."
+                    className="h-10 w-full rounded-xl border border-border bg-card pl-10 pr-3 text-sm"
+                  />
+                </div>
+                {unreadCount > 0 && (
+                  <Button
+                    onClick={markAllAsRead}
+                    variant="outline"
+                    className="h-10 text-xs border-primary/20 hover:bg-primary/5 text-primary flex items-center gap-1.5 shrink-0"
+                  >
+                    <CheckCheck className="h-4 w-4" />
+                    <span>Ler todos ({unreadCount})</span>
+                  </Button>
+                )}
+              </div>
+
               {filteredOrders.length === 0 && <Empty msg="Nenhum pedido encontrado." />}
-              {filteredOrders.map((o) => (
-                <OrderCard key={o.id} order={o} onStatus={updateStatus} />
-              ))}
+              <div className="space-y-3">
+                {filteredOrders.map((o) => (
+                  <OrderCard
+                    key={o.id}
+                    order={o}
+                    onStatus={updateStatus}
+                    isUnread={!readOrderIds.has(o.id)}
+                    onMarkRead={() => markAsRead(o.id)}
+                  />
+                ))}
+              </div>
             </TabsContent>
 
             <TabsContent value="customers" className="space-y-4 pt-4">
@@ -300,7 +501,7 @@ export default function AdminDashboardPage() {
                   const co = orders.filter((o) => o.customer_phone === c.phone || (c.user_id && (o as OrderRow & { user_id?: string }).user_id === c.user_id));
                   const totalSpent = co.reduce((s, o) => s + Number(o.total), 0);
                   return (
-                    <div key={c.id} className="rounded-2xl bg-card p-4 text-sm space-y-3">
+                    <div key={c.id} className="rounded-2xl bg-card p-4 text-sm space-y-3 border border-border/30">
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <div className="font-bold text-base">{c.full_name || "(sem nome)"}</div>
@@ -330,7 +531,7 @@ export default function AdminDashboardPage() {
                           onClick={() => handleOpenDetails(c)}
                           className="h-8 text-xs gap-1"
                         >
-                          <Eye className="h-3.5 w-3.5" /> Ver detalhes
+                          Ver detalhes
                         </Button>
                         <Button
                           size="sm"
@@ -338,7 +539,7 @@ export default function AdminDashboardPage() {
                           onClick={() => deleteCustomer(c.id, c.full_name)}
                           className="h-8 text-xs gap-1 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
                         >
-                          <Trash2 className="h-3.5 w-3.5" /> Excluir
+                          Excluir
                         </Button>
                       </div>
                     </div>
@@ -375,7 +576,7 @@ export default function AdminDashboardPage() {
             <TabsContent value="ranking" className="space-y-2 pt-4">
               {ranking.length === 0 && <Empty msg="Sem pedidos para ranquear." />}
               {ranking.map((r, i) => (
-                <div key={r.phone + i} className="flex items-center justify-between rounded-xl bg-card p-3 text-sm">
+                <div key={r.phone + i} className="flex items-center justify-between rounded-xl bg-card p-3 text-sm border border-border/30">
                   <div className="flex items-center gap-3">
                     <span className="grid h-7 w-7 place-items-center rounded-full bg-primary/20 text-xs font-bold text-primary">{i + 1}</span>
                     <div>
@@ -393,11 +594,15 @@ export default function AdminDashboardPage() {
             <TabsContent value="searches" className="space-y-1 pt-4">
               {recentSearches.length === 0 && <Empty msg="Nenhuma busca registrada." />}
               {recentSearches.map((s, i) => (
-                <div key={i} className="flex items-center justify-between rounded-lg bg-card p-2 text-xs">
+                <div key={i} className="flex items-center justify-between rounded-lg bg-card p-2 text-xs border border-border/25">
                   <span>{s.term}</span>
                   <span className="text-muted-foreground">{s.results_count} res. · {new Date(s.created_at).toLocaleString("pt-BR")}</span>
                 </div>
               ))}
+            </TabsContent>
+
+            <TabsContent value="sound" className="pt-4">
+              <AdminNotificationSettingsPanel />
             </TabsContent>
           </Tabs>
         </main>
@@ -489,9 +694,9 @@ export default function AdminDashboardPage() {
   );
 }
 
-function Stat({ icon, label, v }: { icon: React.ReactNode; label: string; v: number }) {
+function Stat({ icon, label, v }: { icon: React.ReactNode; label: string; v: any }) {
   return (
-    <div className="rounded-2xl bg-card p-3 text-center">
+    <div className="rounded-2xl bg-card p-3 text-center border border-border/30">
       <div className="mx-auto mb-1 grid h-8 w-8 place-items-center rounded-full bg-primary/20 text-primary">{icon}</div>
       <div className="text-lg font-extrabold">{v}</div>
       <div className="text-[10px] uppercase text-muted-foreground">{label}</div>
@@ -500,5 +705,5 @@ function Stat({ icon, label, v }: { icon: React.ReactNode; label: string; v: num
 }
 
 function Empty({ msg }: { msg: string }) {
-  return <div className="rounded-2xl bg-card p-8 text-center text-sm text-muted-foreground">{msg}</div>;
+  return <div className="rounded-2xl bg-card p-8 text-center text-sm text-muted-foreground border border-border/30">{msg}</div>;
 }
