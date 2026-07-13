@@ -6,6 +6,58 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+/**
+ * Validação criptográfica oficial de assinatura do Mercado Pago via HMAC SHA-256
+ */
+async function verifyMercadoPagoSignature(
+  signatureHeader: string,
+  requestId: string,
+  resourceId: string,
+  secretKey: string
+): Promise<boolean> {
+  if (!signatureHeader || !secretKey) return false;
+  
+  try {
+    const parts = signatureHeader.split(",");
+    let ts = "";
+    let v1 = "";
+    for (const part of parts) {
+      const [k, v] = part.split("=");
+      if (k?.trim() === "ts") ts = v?.trim();
+      if (k?.trim() === "v1") v1 = v?.trim();
+    }
+    
+    if (!ts || !v1) return false;
+    
+    // Constrói o manifesto de assinatura padrão do Mercado Pago
+    const manifest = `id:${resourceId};request-id:${requestId};ts:${ts};`;
+    
+    const encoder = new TextEncoder();
+    const keyBytes = encoder.encode(secretKey);
+    const dataBytes = encoder.encode(manifest);
+    
+    const cryptoKey = await crypto.subtle.importKey(
+      "raw",
+      keyBytes,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    
+    const signatureBuffer = await crypto.subtle.sign("HMAC", cryptoKey, dataBytes);
+    const signatureBytes = new Uint8Array(signatureBuffer);
+    
+    const computedHash = Array.from(signatureBytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+      
+    return computedHash === v1;
+  } catch (err) {
+    console.error("[mercadopago-webhook] Erro ao validar assinatura criptográfica:", err);
+    return false;
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -15,6 +67,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const mpAccessToken = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN");
+    const mpWebhookSecret = Deno.env.get("MERCADO_PAGO_WEBHOOK_SECRET"); // Secret configurado para HMAC
 
     if (!mpAccessToken) {
       console.error("[mercadopago-webhook] Erro: MERCADO_PAGO_ACCESS_TOKEN não configurado.");
@@ -26,17 +79,47 @@ serve(async (req) => {
 
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
-    // [MELHORIA DE SEGURANÇA]: Logging de cabeçalhos e assinatura de segurança
+    // Captura headers de identificação e assinatura
     const signature = req.headers.get("x-signature") || "";
     const requestId = req.headers.get("x-request-id") || "";
-    console.log(`[mercadopago-webhook] Nova notificação recebida. RequestId: ${requestId}, Signature: ${signature}`);
+    const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
 
-    // Recebe o payload do webhook do Mercado Pago
+    // Recebe o payload do webhook
     const payload = await req.json();
-    console.log("[mercadopago-webhook] Payload recebido:", JSON.stringify(payload));
+    console.log(`[mercadopago-webhook] Notificação recebida. RequestId: ${requestId}, IP: ${clientIp}`);
 
-    const resourceId = payload.data?.id || payload.resource;
-    const topic = payload.type || payload.topic;
+    const resourceId = String(payload.data?.id || payload.resource || "");
+    const topic = payload.type || payload.topic || "";
+
+    // Se houver um segredo configurado nas variáveis de ambiente, executa validação criptográfica HMAC SHA-256 obrigatória
+    if (mpWebhookSecret) {
+      const isSignatureValid = await verifyMercadoPagoSignature(signature, requestId, resourceId, mpWebhookSecret);
+      if (!isSignatureValid) {
+        console.error(`[mercadopago-webhook] ASSINATURA INVÁLIDA DETECTADA! Bloqueando requisição de IP: ${clientIp}`);
+        
+        // Registrar tentativa de invasão/falsificação nos logs de segurança
+        await supabaseClient.from("security_logs").insert({
+          event_type: "login_failed",
+          email: "seguranca@lojasmaxx.com.br",
+          metadata: {
+            security_alert: "invalid_webhook_signature",
+            signature,
+            request_id: requestId,
+            ip_address: clientIp,
+            payload
+          },
+          user_agent: req.headers.get("user-agent")?.slice(0, 500) || null
+        });
+
+        return new Response(JSON.stringify({ error: "Assinatura inválida. Acesso negado." }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+      console.log("[mercadopago-webhook] Assinatura validada criptograficamente via HMAC SHA-256 com sucesso!");
+    } else {
+      console.warn("[mercadopago-webhook] Alerta: MERCADO_PAGO_WEBHOOK_SECRET não configurado. Recomenda-se configurar para habilitar validação HMAC.");
+    }
 
     // Apenas tópicos relacionados a pagamento são relevantes
     if (topic !== "payment" || !resourceId) {
@@ -111,7 +194,7 @@ serve(async (req) => {
       // Registra no Log de Segurança
       try {
         await supabaseClient.from("security_logs").insert({
-          event_type: "login_failed", // Registrando como evento crítico de segurança
+          event_type: "login_failed",
           user_id: order.user_id,
           email: "seguranca@lojasmaxx.com.br",
           metadata: {

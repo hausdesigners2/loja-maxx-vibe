@@ -1,6 +1,6 @@
 /**
- * Lojas Maxx - Centralized Secure CORS Helper
- * Prevents unauthorized cross-origin request forgery while allowing production and preview environments.
+ * Lojas Maxx - Centralized Secure CORS & Security Headers Helper
+ * Prevents unauthorized cross-origin request forgery and enforces rigorous server-side security.
  */
 
 const ALLOWED_ORIGINS = [
@@ -34,7 +34,18 @@ export function getCorsHeaders(req: Request): Record<string, string> {
     "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS, PUT, DELETE",
     "Access-Control-Max-Age": "86400",
-    "Vary": "Origin" // Tells browsers/caches to cache CORS response per origin
+    "Vary": "Origin", // Tells browsers/caches to cache CORS response per origin
+    
+    // Rigorous Security Headers (Server-side defense)
+    "Content-Security-Policy": "default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' https: data:; connect-src 'self' https: wss:; frame-src 'self' https:; object-src 'none';",
+    "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=(), interest-cohort=()",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "require-corp",
+    "Cross-Origin-Resource-Policy": "same-site"
   };
 }
 
