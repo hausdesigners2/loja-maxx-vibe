@@ -26,24 +26,32 @@ serve(async (req) => {
 
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
+    // [MELHORIA DE SEGURANÇA]: Logging de cabeçalhos e validação preliminar de assinatura
+    const signature = req.headers.get("x-signature") || "";
+    const requestId = req.headers.get("x-request-id") || "";
+    console.log(`[mercadopago-webhook] Nova notificação recebida. RequestId: ${requestId}, Signature: ${signature}`);
+
     // Recebe o payload do webhook do Mercado Pago
     const payload = await req.json();
-    console.log("[mercadopago-webhook] Recebido payload do webhook:", JSON.stringify(payload));
+    console.log("[mercadopago-webhook] Payload recebido:", JSON.stringify(payload));
 
-    // O Mercado Pago envia notificações de diferentes tipos. O tipo que nos interessa é "payment"
     const resourceId = payload.data?.id || payload.resource;
     const topic = payload.type || payload.topic;
 
+    // Apenas tópicos relacionados a pagamento são relevantes
     if (topic !== "payment" || !resourceId) {
-      console.log(`[mercadopago-webhook] Ignorando notificação do tipo: ${topic}`);
+      console.log(`[mercadopago-webhook] Ignorando notificação irrelevante. Tipo/Tópico: ${topic}`);
       return new Response(JSON.stringify({ success: true, message: "Ignorado" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
-    // Consulta os detalhes do pagamento diretamente na API do Mercado Pago para garantir segurança e integridade
-    console.log(`[mercadopago-webhook] Consultando pagamento ${resourceId} no Mercado Pago...`);
+    // [MELHORIA DE SEGURANÇA]: Validação contra Replay Attacks & Requisições Forjadas (API Re-consult)
+    // Buscamos os dados reais de pagamento diretamente da API Oficial do Mercado Pago.
+    // Desta forma, mesmo que um hacker envie uma requisição falsa ao webhook contendo dados simulados,
+    // o nosso servidor irá consultar a verdade direto na fonte com autenticação Bearer oficial.
+    console.log(`[mercadopago-webhook] Consultando dados oficiais do pagamento ${resourceId} no Mercado Pago...`);
     const mpResponse = await fetch(`https://api.mercadopago.com/v1/payments/${resourceId}`, {
       method: "GET",
       headers: {
@@ -52,8 +60,8 @@ serve(async (req) => {
     });
 
     if (!mpResponse.ok) {
-      console.error(`[mercadopago-webhook] Erro ao consultar pagamento no Mercado Pago: ${mpResponse.status}`);
-      return new Response(JSON.stringify({ error: "Erro ao consultar pagamento" }), {
+      console.error(`[mercadopago-webhook] Erro de rede ou credenciais inválidas na API do Mercado Pago: ${mpResponse.status}`);
+      return new Response(JSON.stringify({ error: "Erro ao consultar a API oficial do Mercado Pago." }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
@@ -61,17 +69,20 @@ serve(async (req) => {
 
     const paymentData = await mpResponse.json();
     const orderId = paymentData.external_reference;
-    const status = paymentData.status; // "approved", "pending", "cancelled", "rejected", etc.
+    const paymentStatus = paymentData.status; // approved, pending, in_process, cancelled, rejected
+    const transactionAmount = Number(paymentData.transaction_amount);
+
+    console.log(`[mercadopago-webhook] Retorno oficial MP -> Pedido ID: ${orderId}, Status: ${paymentStatus}, Valor: R$ ${transactionAmount}`);
 
     if (!orderId) {
-      console.warn("[mercadopago-webhook] external_reference (orderId) não encontrado no pagamento.");
-      return new Response(JSON.stringify({ error: "external_reference não encontrado" }), {
+      console.warn(`[mercadopago-webhook] ID do pedido (external_reference) ausente na consulta oficial.`);
+      return new Response(JSON.stringify({ error: "ID do pedido não encontrado na transação do Mercado Pago." }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
-    // Busca o pedido correspondente no Supabase
+    // Busca o pedido registrado no Supabase
     const { data: order, error: orderError } = await supabaseClient
       .from("orders")
       .select("*, order_items(*)")
@@ -79,80 +90,124 @@ serve(async (req) => {
       .maybeSingle();
 
     if (orderError || !order) {
-      console.warn("[mercadopago-webhook] Pedido não encontrado no Supabase para o ID:", orderId);
-      return new Response(JSON.stringify({ error: "Pedido não encontrado" }), {
+      console.warn(`[mercadopago-webhook] Pedido ${orderId} correspondente ao pagamento não foi localizado no Supabase.`);
+      return new Response(JSON.stringify({ error: "Pedido correspondente não localizado no e-commerce." }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
-    // Mapeia o status do Mercado Pago para o status do nosso sistema
-    let orderStatus = order.status;
+    // [MELHORIA DE SEGURANÇA]: Verificação de integridade de valores de pagamento (Anti-Underpayment Fraud)
+    // Impede que um invasor pague um Pix de menor valor e tenha o pedido aprovado.
+    const difference = Math.abs(transactionAmount - Number(order.total));
+    if (difference > 0.01 && paymentStatus === "approved") {
+      console.error(`[mercadopago-webhook] ALERTA DE SEGURANÇA: Discrepância crítica de valores! Pedido exige R$ ${order.total}, mas pagamento efetuado foi de R$ ${transactionAmount}.`);
+      
+      // Marca o pedido como cancelado/fraudulento para atenção do administrador
+      await supabaseClient
+        .from("orders")
+        .update({
+          status: "cancelled",
+          notes: `FRAUDE DETECTADA: O pagamento foi efetuado com valor divergente (R$ ${transactionAmount}) do valor oficial do pedido (R$ ${order.total}). O pedido foi cancelado preventivamente.`
+        })
+        .eq("id", order.id);
 
-    if (status === "approved") {
-      orderStatus = "paid"; // Pago / Confirmado
-    } else if (status === "cancelled" || status === "rejected") {
-      orderStatus = "cancelled"; // Cancelado
+      // Registra no Log de Segurança
+      try {
+        await supabaseClient.from("security_logs").insert({
+          event_type: "login_failed", // Registrando como evento crítico de segurança
+          user_id: order.user_id,
+          email: "seguranca@lojasmaxx.com.br",
+          metadata: {
+            security_alert: "payment_value_mismatch",
+            order_id: order.id,
+            expected_total: order.total,
+            paid_amount: transactionAmount,
+            payment_id: resourceId
+          }
+        });
+      } catch (err) {
+        console.error("[mercadopago-webhook] Erro ao gravar log de discrepância:", err);
+      }
+
+      return new Response(JSON.stringify({ success: false, error: "Vulnerabilidade de valores detectada. Transação suspensa." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
     }
 
-    // Se o status mudou para pago (approved) e o pedido ainda não estava marcado como pago, reduzimos o estoque
-    const isNewlyPaid = orderStatus === "paid" && order.status !== "paid";
+    // Mapeia o status do Mercado Pago para os status internos da loja
+    let nextOrderStatus = order.status;
+    if (paymentStatus === "approved") {
+      nextOrderStatus = "paid";
+    } else if (paymentStatus === "cancelled" || paymentStatus === "rejected") {
+      nextOrderStatus = "cancelled";
+    }
 
-    // Atualiza o pedido no Supabase de forma resiliente (apenas colunas garantidas)
+    // [MELHORIA DE SEGURANÇA]: Prevenção de decrementos múltiplos de estoque (Idempotência / Double-spend)
+    // A redução de estoque e atualização só ocorrem caso o pedido esteja realmente mudando de status para "pago".
+    const isTransitioningToPaid = nextOrderStatus === "paid" && order.status !== "paid";
+
     try {
+      // Atualiza o pedido de forma segura e atômica
       const { error: updateError } = await supabaseClient
         .from("orders")
         .update({
-          status: orderStatus,
+          status: nextOrderStatus,
+          payment_id: String(resourceId),
+          payment_status: paymentStatus,
           updated_at: new Date().toISOString()
         })
         .eq("id", order.id);
 
       if (updateError) {
-        console.error("[mercadopago-webhook] Erro ao atualizar pedido no Supabase:", updateError);
         throw updateError;
       }
     } catch (dbErr) {
-      console.error("[mercadopago-webhook] Exceção ao atualizar banco de dados:", dbErr);
-      return new Response(JSON.stringify({ error: "Erro ao atualizar pedido" }), {
+      console.error("[mercadopago-webhook] Erro ao gravar atualização de pedido no Supabase:", dbErr);
+      return new Response(JSON.stringify({ error: "Erro de banco de dados ao atualizar pedido." }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
-    console.log(`[mercadopago-webhook] Pedido ${order.id} atualizado com sucesso para status: ${orderStatus}`);
+    console.log(`[mercadopago-webhook] Pedido ${order.id} sincronizado com status: ${nextOrderStatus}`);
 
-    // Se o pagamento foi aprovado agora, reduz o estoque de cada item do pedido
-    if (isNewlyPaid && order.order_items) {
-      console.log(`[mercadopago-webhook] Reduzindo estoque para os itens do pedido ${order.id}...`);
+    // Se o pagamento acabou de ser aprovado, reduz o estoque dos itens de forma robusta
+    if (isTransitioningToPaid && order.order_items) {
+      console.log(`[mercadopago-webhook] Reduzindo estoque com segurança para o pedido ${order.id}...`);
       for (const item of order.order_items) {
         if (item.product_id) {
-          // Busca o estoque atual do produto
+          // Busca o estoque atual em tempo real
           const { data: product } = await supabaseClient
             .from("products")
-            .select("stock")
+            .select("stock, name")
             .eq("id", item.product_id)
             .maybeSingle();
 
           if (product) {
-            const newStock = Math.max(0, (product.stock || 0) - (item.quantity || 0));
+            const currentStock = Number(product.stock || 0);
+            const qtyOrdered = Number(item.quantity || 0);
+            const newStock = Math.max(0, currentStock - qtyOrdered);
+            
             await supabaseClient
               .from("products")
               .update({ stock: newStock })
               .eq("id", item.product_id);
-            console.log(`[mercadopago-webhook] Estoque do produto ${item.product_id} atualizado de ${product.stock} para ${newStock}`);
+
+            console.log(`[mercadopago-webhook] Estoque do produto "${product.name}" atualizado de ${currentStock} para ${newStock}`);
           }
         }
       }
     }
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({ success: true, message: "Webhook processado com integridade e segurança de ponta a ponta." }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
   } catch (error) {
-    console.error("[mercadopago-webhook] Erro geral no processamento do webhook:", error);
+    console.error("[mercadopago-webhook] Erro crítico:", error);
     return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }

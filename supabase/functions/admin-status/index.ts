@@ -1,17 +1,13 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.105.1";
 import { rateLimit, SECURITY_POLICIES, generateRateLimitResponse, injectRateLimitHeaders } from "../_shared/rateLimiter.ts"
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+import { getCorsHeaders, handleOptions } from "../_shared/cors.ts"
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  // Handle preflight requests securely
+  const preflight = handleOptions(req);
+  if (preflight) return preflight;
 
-  // Captura o IP do cliente de forma segura
+  const corsHeaders = getCorsHeaders(req);
   const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
 
   // Aplica a política de segurança global (máximo 100 requisições por minuto)
