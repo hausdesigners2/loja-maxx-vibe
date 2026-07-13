@@ -7,6 +7,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { logSearch } from "@/lib/checkout";
+import { sanitizeText } from "@/lib/security";
 
 type Product = Tables<"products">;
 
@@ -17,12 +18,25 @@ export default function SearchPage() {
 
   useEffect(() => {
     const t = setTimeout(async () => {
-      let query = supabase.from("products").select("*").eq("active", true).order("created_at", { ascending: false }).limit(60);
-      const term = q.trim();
-      if (term) query = query.ilike("name", `%${term}%`);
+      let query = supabase
+        .from("products")
+        .select("*")
+        .eq("active", true)
+        .order("created_at", { ascending: false })
+        .limit(60);
+        
+      const rawTerm = q.trim();
+      // Sanitização rígida do input de busca contra qualquer tentativa de evasão ou injeção
+      const term = sanitizeText(rawTerm, 100);
+      
+      if (term) {
+        query = query.ilike("name", `%${term}%`);
+      }
+      
       const { data } = await query;
       const list = data ?? [];
       setProducts(list);
+      
       if (term.length >= 2) {
         void logSearch(term, list.length, user?.id ?? null);
       }

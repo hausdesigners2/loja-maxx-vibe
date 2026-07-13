@@ -34,6 +34,57 @@ export function sanitizeText(input: string, maxLength = 500): string {
     .slice(0, maxLength);
 }
 
+/** 
+ * Escapes characters to prevent Cross-Site Scripting (XSS).
+ * Replaces standard HTML meta-characters with secure entity encodings.
+ */
+export function escapeHTML(str: string | null | undefined): string {
+  if (!str) return "";
+  return str.replace(/[&<>"']/g, (match) => {
+    switch (match) {
+      case "&": return "&";
+      case "<": return "<";
+      case ">": return ">";
+      case '"': return "&quot;";
+      case "'": return "&#x27;";
+      default: return match;
+    }
+  });
+}
+
+/* ---------- Session-Bound CSRF Token System ---------- */
+
+/** Generates a cryptographically random token for secure actions */
+export function generateCSRFToken(): string {
+  if (typeof window === "undefined" || !window.crypto) {
+    return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  }
+  const array = new Uint32Array(4);
+  window.crypto.getRandomValues(array);
+  return Array.from(array, dec => dec.toString(16).padStart(8, '0')).join('');
+}
+
+/** 
+ * Retrieves the current valid CSRF token from sessionStorage or generates a new one.
+ * Session-bound tokens prevent cross-site form/action hijacking.
+ */
+export function getCSRFToken(): string {
+  if (typeof window === "undefined") return "";
+  let token = sessionStorage.getItem("loja-maxx-csrf-token");
+  if (!token) {
+    token = generateCSRFToken();
+    sessionStorage.setItem("loja-maxx-csrf-token", token);
+  }
+  return token;
+}
+
+/** Validates that a submitted token matches the session-bound CSRF token */
+export function validateCSRFToken(token: string | null | undefined): boolean {
+  if (typeof window === "undefined") return true;
+  const currentToken = sessionStorage.getItem("loja-maxx-csrf-token");
+  return !!(currentToken && token && currentToken === token);
+}
+
 /* ---------- Friendly error mapping (no internal details leaked) ---------- */
 
 const errorMap: Record<string, string> = {

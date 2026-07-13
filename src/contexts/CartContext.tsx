@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { getCSRFToken, validateCSRFToken } from "@/lib/security";
 
 export interface CartItem {
   id: string;
@@ -116,6 +117,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
       toast.error("Administradores não possuem carrinho de compras.");
       return false;
     }
+    
+    // CSRF Token Validation Layer
+    const activeToken = getCSRFToken();
+    if (!validateCSRFToken(activeToken)) {
+      toast.error("Erro de segurança: Token de sessão CSRF inválido.");
+      return false;
+    }
+    
     return true;
   };
 
@@ -133,6 +142,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   };
 
   const remove = (id: string) => {
+    if (!guard()) return;
     setItems((prev) => {
       const next = prev.filter((x) => x.id !== id);
       saveCart(next);
@@ -141,6 +151,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   };
 
   const setQty = (id: string, qty: number) => {
+    if (!guard()) return;
     if (qty <= 0) return remove(id);
     setItems((prev) => {
       const next = prev.map((x) => x.id === id ? { ...x, quantity: qty } : x);
@@ -150,6 +161,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   };
 
   const clear = () => {
+    if (!guard()) return;
     setItems([]);
     saveCart([]);
   };

@@ -9,6 +9,7 @@ import { useFavorites } from "@/hooks/useFavorites";
 import { formatBRL, finalPrice } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { escapeHTML } from "@/lib/security";
 
 type Product = Tables<"products">;
 
@@ -33,6 +34,11 @@ export default function ProductPage() {
   const final = finalPrice(price, product.discount_percent);
   const fav = isFav(product.id);
 
+  // Escaping parameters for stored XSS mitigation
+  const safeName = escapeHTML(product.name);
+  const safeDescription = product.description ? escapeHTML(product.description) : null;
+  const safeImageUrl = product.image_url ? escapeHTML(product.image_url) : null;
+
   return (
     <AppShell>
       <div className="space-y-4 animate-fade-in">
@@ -42,8 +48,8 @@ export default function ProductPage() {
 
         <div className="relative overflow-hidden rounded-2xl bg-card">
           <div className="aspect-square">
-            {product.image_url ? (
-              <img src={product.image_url} alt={product.name} className="h-full w-full object-cover" />
+            {safeImageUrl ? (
+              <img src={safeImageUrl} alt={safeName} className="h-full w-full object-cover" />
             ) : (
               <div className="grid h-full place-items-center text-6xl text-muted-foreground">📦</div>
             )}
@@ -60,15 +66,15 @@ export default function ProductPage() {
         </div>
 
         <div>
-          <h1 className="text-2xl font-extrabold leading-tight">{product.name}</h1>
+          <h1 className="text-2xl font-extrabold leading-tight">{safeName}</h1>
           <div className="mt-2 flex items-baseline gap-2">
             {product.discount_percent > 0 && (
               <span className="text-sm text-muted-foreground line-through">{formatBRL(price)}</span>
             )}
             <span className="text-3xl font-extrabold text-primary">{formatBRL(final)}</span>
           </div>
-          {product.description && (
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{product.description}</p>
+          {safeDescription && (
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{safeDescription}</p>
           )}
         </div>
 
