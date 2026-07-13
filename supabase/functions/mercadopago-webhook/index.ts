@@ -26,7 +26,7 @@ serve(async (req) => {
 
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
-    // [MELHORIA DE SEGURANÇA]: Logging de cabeçalhos e validação preliminar de assinatura
+    // [MELHORIA DE SEGURANÇA]: Logging de cabeçalhos e assinatura de segurança
     const signature = req.headers.get("x-signature") || "";
     const requestId = req.headers.get("x-request-id") || "";
     console.log(`[mercadopago-webhook] Nova notificação recebida. RequestId: ${requestId}, Signature: ${signature}`);
@@ -47,10 +47,7 @@ serve(async (req) => {
       });
     }
 
-    // [MELHORIA DE SEGURANÇA]: Validação contra Replay Attacks & Requisições Forjadas (API Re-consult)
-    // Buscamos os dados reais de pagamento diretamente da API Oficial do Mercado Pago.
-    // Desta forma, mesmo que um hacker envie uma requisição falsa ao webhook contendo dados simulados,
-    // o nosso servidor irá consultar a verdade direto na fonte com autenticação Bearer oficial.
+    // [MELHORIA DE SEGURANÇA]: Consulta direta e oficial à API do Mercado Pago (Prevenção de Fake Payloads)
     console.log(`[mercadopago-webhook] Consultando dados oficiais do pagamento ${resourceId} no Mercado Pago...`);
     const mpResponse = await fetch(`https://api.mercadopago.com/v1/payments/${resourceId}`, {
       method: "GET",
@@ -60,7 +57,7 @@ serve(async (req) => {
     });
 
     if (!mpResponse.ok) {
-      console.error(`[mercadopago-webhook] Erro de rede ou credenciais inválidas na API do Mercado Pago: ${mpResponse.status}`);
+      console.error(`[mercadopago-webhook] Erro ao consultar a API oficial do Mercado Pago: ${mpResponse.status}`);
       return new Response(JSON.stringify({ error: "Erro ao consultar a API oficial do Mercado Pago." }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -98,7 +95,6 @@ serve(async (req) => {
     }
 
     // [MELHORIA DE SEGURANÇA]: Verificação de integridade de valores de pagamento (Anti-Underpayment Fraud)
-    // Impede que um invasor pague um Pix de menor valor e tenha o pedido aprovado.
     const difference = Math.abs(transactionAmount - Number(order.total));
     if (difference > 0.01 && paymentStatus === "approved") {
       console.error(`[mercadopago-webhook] ALERTA DE SEGURANÇA: Discrepância crítica de valores! Pedido exige R$ ${order.total}, mas pagamento efetuado foi de R$ ${transactionAmount}.`);
@@ -145,7 +141,6 @@ serve(async (req) => {
     }
 
     // [MELHORIA DE SEGURANÇA]: Prevenção de decrementos múltiplos de estoque (Idempotência / Double-spend)
-    // A redução de estoque e atualização só ocorrem caso o pedido esteja realmente mudando de status para "pago".
     const isTransitioningToPaid = nextOrderStatus === "paid" && order.status !== "paid";
 
     try {
@@ -173,29 +168,34 @@ serve(async (req) => {
 
     console.log(`[mercadopago-webhook] Pedido ${order.id} sincronizado com status: ${nextOrderStatus}`);
 
-    // Se o pagamento acabou de ser aprovado, reduz o estoque dos itens de forma robusta
+    // [SEGURANÇA CONTRA CONDIÇÃO DE CORRIDA]: Reduz o estoque dos itens utilizando RPC com travas em Row-level (SELECT FOR UPDATE)
     if (isTransitioningToPaid && order.order_items) {
-      console.log(`[mercadopago-webhook] Reduzindo estoque com segurança para o pedido ${order.id}...`);
+      console.log(`[mercadopago-webhook] Reduzindo estoque com transação atômica contra condições de corrida para o pedido ${order.id}...`);
       for (const item of order.order_items) {
         if (item.product_id) {
-          // Busca o estoque atual em tempo real
-          const { data: product } = await supabaseClient
-            .from("products")
-            .select("stock, name")
-            .eq("id", item.product_id)
-            .maybeSingle();
+          try {
+            // Executa a chamada RPC decrement_product_stock para prevenir que estoque fique negativo ou sofra sobreposição concorrente
+            const { data: decrementSuccess, error: rpcErr } = await supabaseClient.rpc(
+              "decrement_product_stock",
+              { _product_id: item.product_id, _quantity: Number(item.quantity) }
+            );
 
-          if (product) {
-            const currentStock = Number(product.stock || 0);
-            const qtyOrdered = Number(item.quantity || 0);
-            const newStock = Math.max(0, currentStock - qtyOrdered);
-            
-            await supabaseClient
-              .from("products")
-              .update({ stock: newStock })
-              .eq("id", item.product_id);
-
-            console.log(`[mercadopago-webhook] Estoque do produto "${product.name}" atualizado de ${currentStock} para ${newStock}`);
+            if (rpcErr) {
+              console.error(`[mercadopago-webhook] Falha de comunicação RPC no decremento de estoque do produto ${item.product_id}:`, rpcErr);
+            } else if (!decrementSuccess) {
+              console.warn(`[mercadopago-webhook] Alerta: Estoque insuficiente ou produto inexistente para o produto ID: ${item.product_id}`);
+              // Registra observação no pedido do lojista
+              await supabaseClient
+                .from("orders")
+                .update({
+                  notes: (order.notes ? order.notes + " | " : "") + `Aviso: O produto "${item.product_name}" esgotou durante o processamento concorrente do pagamento.`
+                })
+                .eq("id", order.id);
+            } else {
+              console.log(`[mercadopago-webhook] Estoque decrementado com sucesso de forma atômica para o produto: "${item.product_name}"`);
+            }
+          } catch (rpcEx) {
+            console.error(`[mercadopago-webhook] Exceção na chamada RPC de estoque para o produto ${item.product_id}:`, rpcEx);
           }
         }
       }

@@ -49,6 +49,9 @@ const DEFAULT_CATEGORIES = [
   { id: "7", name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7, created_at: "" }
 ];
 
+const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
+const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; // 5MB
+
 function mergeCategories(fetched: Category[]): Category[] {
   const map = new Map<string, Category>();
   DEFAULT_CATEGORIES.forEach(c => map.set(c.slug, c as Category));
@@ -120,16 +123,62 @@ export default function AdminPage() {
     setOpen(true);
   };
 
+  const compressImage = (file: File): Promise<Blob> =>
+    new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const maxW = 1000; // Resizing for optimal performance & storage efficiency
+        const scale = Math.min(1, maxW / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas failure"));
+        ctx.drawImage(img, 0, 0, w, h);
+        canvas.toBlob(
+          (b) => (b ? resolve(b) : reject(new Error("Compression failure"))),
+          "image/jpeg",
+          0.85,
+        );
+      };
+      img.onerror = () => reject(new Error("Imagem inválida ou corrompida."));
+      img.src = url;
+    });
+
   const onUpload = async (file: File) => {
+    if (!ALLOWED_MIME.includes(file.type)) {
+      toast.error("Formato inválido. Use apenas imagens JPG, PNG ou WebP.");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_SIZE) {
+      toast.error("Imagem muito pesada. O tamanho máximo permitido é de 5MB.");
+      return;
+    }
+
     setUploading(true);
-    const ext = file.name.split(".").pop();
-    const path = `${crypto.randomUUID()}.${ext}`;
-    const { error } = await supabase.storage.from("products").upload(path, file, { upsert: false });
-    if (error) { toast.error(error.message); setUploading(false); return; }
-    const { data } = supabase.storage.from("products").getPublicUrl(path);
-    setForm((f) => ({ ...f, image_url: data.publicUrl }));
-    setUploading(false);
-    toast.success("Imagem carregada");
+    try {
+      const blob = await compressImage(file);
+      const ext = "jpg"; // Forçando formato jpeg comprimido
+      const path = `${crypto.randomUUID()}.${ext}`;
+      
+      const { error } = await supabase.storage
+        .from("products")
+        .upload(path, blob, { contentType: "image/jpeg", upsert: false });
+
+      if (error) throw error;
+
+      const { data } = supabase.storage.from("products").getPublicUrl(path);
+      setForm((f) => ({ ...f, image_url: data.publicUrl }));
+      toast.success("Imagem enviada e otimizada com sucesso!");
+    } catch (e: any) {
+      toast.error(e.message || "Erro ao fazer upload da imagem.");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const save = async () => {
