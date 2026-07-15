@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { formatBRL, finalPrice } from "@/lib/format";
+import { requestPushPermission as requestOneSignalPushPermission } from "@/lib/onesignal";
 
 interface OrderRow { id: string; created_at: string; total: number; status: string; order_number?: number | null }
 interface OrderItem { id: string; product_name: string; quantity: number; unit_price: number; discount_percent: number; subtotal: number }
@@ -170,11 +171,9 @@ export default function AccountPage() {
       return;
     }
     try {
-      const permission = await Notification.requestPermission();
-      if (permission === "granted") {
+      const granted = await requestOneSignalPushPermission();
+      if (granted) {
         toast.success("Notificações via Push autorizadas com sucesso!");
-        // Registro futuro de token FCM ou OneSignal aqui
-        console.log("[FCM/OneSignal] Pronto para persistência do push token.");
       } else {
         toast.warning("As notificações push do navegador foram recusadas ou bloqueadas.");
       }

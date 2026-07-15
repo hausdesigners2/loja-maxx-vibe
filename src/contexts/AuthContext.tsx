@@ -3,6 +3,7 @@ import { AuthError, Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { formatAuthError, logSecurityEvent } from "@/lib/security";
 import { verifyTOTP } from "@/lib/totp";
+import { loginOneSignalUser, logoutOneSignalUser } from "@/lib/onesignal";
 
 interface AuthContextValue {
   user: User | null;
@@ -71,12 +72,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(sess?.user ?? null);
       if (sess?.user) {
         await checkAdmin(sess.user.id);
+        // Link authenticated user session with OneSignal external_id
+        loginOneSignalUser(sess.user.id);
       } else {
         setIsAdmin(false);
         setIsAdmin2FAApproved(false);
         if (typeof window !== "undefined") {
           sessionStorage.removeItem("loja-maxx-admin-2fa-approved");
         }
+        // Logout user from OneSignal session tracking
+        logoutOneSignalUser();
       }
       if (active) setLoading(false);
     };
