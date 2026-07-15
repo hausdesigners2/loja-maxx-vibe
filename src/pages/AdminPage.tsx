@@ -203,8 +203,8 @@ export default function AdminPage() {
 
   const remove = async (id: string) => {
     if (!confirm("Excluir este produto?")) return;
-    const { error } = await supabase.from("products").delete().eq("id", id);
-    if (error) return toast.error(error.message);
+    const { error = null } = await supabase.from("products").delete().eq("id", id);
+    if (error) return toast.error((error as any).message);
     toast.success("Produto excluído");
     reload();
   };
@@ -230,7 +230,7 @@ export default function AdminPage() {
               </div>
             </div>
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Painel Administrativo</h1>
-            <div className="mt-3 flex gap-6 border-b border-border">
+            <div className="mt-3 flex gap-6 border-b border-border select-none">
               <Link to="/admin/dashboard" className="pb-2 text-sm font-medium text-muted-foreground">
                 Pedidos
               </Link>
@@ -239,6 +239,9 @@ export default function AdminPage() {
               </span>
               <Link to="/admin/banners" className="pb-2 text-sm font-medium text-muted-foreground">
                 Banners
+              </Link>
+              <Link to="/admin/notifications" className="pb-2 text-sm font-medium text-muted-foreground">
+                Notificações
               </Link>
               <Link to="/admin/sounds" className="pb-2 text-sm font-medium text-muted-foreground">
                 Sons

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { ShoppingBag, ShoppingCart } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
+import { NotificationBell } from "./NotificationBell";
 
 export function TopBar() {
   const { count } = useCart();
@@ -16,14 +17,19 @@ export function TopBar() {
             <p className="text-[10px] text-muted-foreground">Mercado online</p>
           </div>
         </Link>
-        <Link to="/carrinho" className="relative grid h-10 w-10 place-items-center rounded-full bg-secondary">
-          <ShoppingCart className="h-5 w-5" />
-          {count > 0 && (
-            <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-xs font-bold text-primary-foreground">
-              {count}
-            </span>
-          )}
-        </Link>
+        
+        <div className="flex items-center gap-2">
+          <NotificationBell />
+          
+          <Link to="/carrinho" className="relative grid h-10 w-10 place-items-center rounded-full bg-secondary">
+            <ShoppingCart className="h-5 w-5" />
+            {count > 0 && (
+              <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1 text-xs font-bold text-primary-foreground">
+                {count}
+              </span>
+            )}
+          </Link>
+        </div>
       </div>
     </header>
   );

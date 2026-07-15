@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { LogOut, Shield, User as UserIcon, Heart, ShoppingBag, Save, Package, Pencil, CreditCard } from "lucide-react";
+import { LogOut, Shield, User as UserIcon, Heart, ShoppingBag, Save, Package, Pencil, CreditCard, Bell, Volume2 } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -45,9 +46,21 @@ interface Profile {
   city: string;
   state: string;
   zip: string;
+  receive_promotions: boolean;
+  notification_sound: boolean;
 }
 
-const empty: Profile = { full_name: "", phone: "", address: "", complement: "", city: "", state: "", zip: "" };
+const empty: Profile = { 
+  full_name: "", 
+  phone: "", 
+  address: "", 
+  complement: "", 
+  city: "", 
+  state: "", 
+  zip: "",
+  receive_promotions: true,
+  notification_sound: true
+};
 
 export default function AccountPage() {
   const { user, isAdmin, signOut } = useAuth();
@@ -67,7 +80,7 @@ export default function AccountPage() {
     const fetchOrdersAndProfile = async () => {
       const { data } = await supabase
         .from("customer_profiles")
-        .select("full_name, phone, address, complement, city, state, zip")
+        .select("full_name, phone, address, complement, city, state, zip, receive_promotions, notification_sound")
         .eq("user_id", user.id)
         .maybeSingle();
       if (data) setProfile({ ...empty, ...data });
@@ -151,6 +164,52 @@ export default function AccountPage() {
     setEditing(false);
   };
 
+  const requestPushPermission = async () => {
+    if (!("Notification" in window)) {
+      console.warn("Este navegador não suporta notificações Push.");
+      return;
+    }
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        toast.success("Notificações via Push autorizadas com sucesso!");
+        // Registro futuro de token FCM ou OneSignal aqui
+        console.log("[FCM/OneSignal] Pronto para persistência do push token.");
+      } else {
+        toast.warning("As notificações push do navegador foram recusadas ou bloqueadas.");
+      }
+    } catch (err) {
+      console.error("[Notifications] Erro ao solicitar permissão:", err);
+    }
+  };
+
+  const handlePromotionChange = async (checked: boolean) => {
+    const nextProfile = { ...profile, receive_promotions: checked };
+    setProfile(nextProfile);
+    
+    if (checked) {
+      await requestPushPermission();
+    }
+
+    if (user) {
+      await supabase
+        .from("customer_profiles")
+        .upsert({ user_id: user.id, receive_promotions: checked }, { onConflict: "user_id" });
+    }
+  };
+
+  const handleSoundChange = async (checked: boolean) => {
+    const nextProfile = { ...profile, notification_sound: checked };
+    setProfile(nextProfile);
+
+    if (user) {
+      await supabase
+        .from("customer_profiles")
+        .upsert({ user_id: user.id, notification_sound: checked }, { onConflict: "user_id" });
+      toast.success(checked ? "Som ativado!" : "Som das notificações silenciado.");
+    }
+  };
+
   if (!user) {
     return (
       <AppShell>
@@ -216,6 +275,41 @@ export default function AccountPage() {
             </div>
           </div>
         )}
+
+        {/* SECÇÃO NOTIFICAÇÕES (RECEBER PROMOÇÕES & SOM) */}
+        <div className="rounded-2xl bg-card p-4 space-y-4">
+          <h2 className="text-sm font-bold flex items-center gap-2">
+            <Bell className="h-4 w-4 text-primary" /> Notificações
+          </h2>
+          
+          <div className="flex items-start justify-between gap-3 border-b border-border/40 pb-3">
+            <div className="space-y-1">
+              <Label className="text-sm font-bold">Receber promoções e ofertas</Label>
+              <p className="text-xs text-muted-foreground leading-normal">
+                Receba cupons, novidades e promoções exclusivas.
+              </p>
+            </div>
+            <Switch
+              checked={profile.receive_promotions}
+              onCheckedChange={handlePromotionChange}
+            />
+          </div>
+
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <Label className="text-sm font-bold flex items-center gap-1.5">
+                <Volume2 className="h-3.5 w-3.5 text-muted-foreground" /> Som das notificações
+              </Label>
+              <p className="text-xs text-muted-foreground leading-normal">
+                Reproduzir um som quando chegar uma nova notificação.
+              </p>
+            </div>
+            <Switch
+              checked={profile.notification_sound}
+              onCheckedChange={handleSoundChange}
+            />
+          </div>
+        </div>
 
         {orders.length > 0 && (
           <div className="rounded-2xl bg-card p-4 space-y-2">
