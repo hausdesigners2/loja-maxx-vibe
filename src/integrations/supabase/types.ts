@@ -94,6 +94,8 @@ export type Database = {
           updated_at: string
           user_id: string
           zip: string
+          receive_promotions: boolean
+          notification_sound: boolean
         }
         Insert: {
           address?: string
@@ -108,6 +110,8 @@ export type Database = {
           updated_at?: string
           user_id: string
           zip?: string
+          receive_promotions?: boolean
+          notification_sound?: boolean
         }
         Update: {
           address?: string
@@ -122,6 +126,8 @@ export type Database = {
           updated_at?: string
           user_id?: string
           zip?: string
+          receive_promotions?: boolean
+          notification_sound?: boolean
         }
         Relationships: []
       }
@@ -240,11 +246,11 @@ export type Database = {
         Update: {
           change_for?: number | null
           created_at?: string
-          customer_address?: string
+          customer_address: string
           customer_city?: string | null
           customer_complement?: string | null
-          customer_name?: string
-          customer_phone?: string
+          customer_name: string
+          customer_phone: string
           customer_state?: string | null
           customer_zip?: string | null
           id?: string
@@ -388,7 +394,7 @@ export type Database = {
           created_at?: string
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
-          user_id?: string
+          user_id: string
         }
         Relationships: []
       }
