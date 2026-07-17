@@ -227,7 +227,10 @@ serve(async (req) => {
     const isTransitioningToPaid = nextOrderStatus === "paid" && order.status !== "paid";
 
     try {
-      // Atualiza o pedido de forma segura e atômica
+      // Atualiza o pedido de forma segura e atômica.
+      // Tentamos gravar payment_id e payment_status. Se essas colunas não existirem no banco,
+      // a query irá falhar. Criamos um fallback robusto para garantir que a atualização funcione
+      // em qualquer estado do banco de dados (escrevendo informações extras nas notas se necessário).
       const { error: updateError } = await supabaseClient
         .from("orders")
         .update({
@@ -235,11 +238,31 @@ serve(async (req) => {
           payment_id: String(resourceId),
           payment_status: paymentStatus,
           updated_at: new Date().toISOString()
-        })
+        } as any)
         .eq("id", order.id);
 
       if (updateError) {
-        throw updateError;
+        console.warn(`[mercadopago-webhook] Falha ao salvar colunas opcionais de pagamento (Provavelmente não criadas no banco). Executando atualização de fallback robusta...`, updateError);
+        
+        // Fallback: Atualiza o status e anexa os detalhes do pagamento nas observações (notas) que é garantido de existir
+        const appendNotes = `[Pix MP Ref: ${resourceId} | Status: ${paymentStatus}]`;
+        const fallbackNotes = order.notes ? `${order.notes} ${appendNotes}` : appendNotes;
+        
+        const { error: fallbackError } = await supabaseClient
+          .from("orders")
+          .update({
+            status: nextOrderStatus,
+            notes: fallbackNotes.slice(0, 1000),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", order.id);
+
+        if (fallbackError) {
+          throw fallbackError;
+        }
+        console.log(`[mercadopago-webhook] Atualização de fallback do pedido ${order.id} concluída com sucesso.`);
+      } else {
+        console.log(`[mercadopago-webhook] Pedido ${order.id} atualizado com sucesso com as colunas de pagamento.`);
       }
     } catch (dbErr) {
       console.error("[mercadopago-webhook] Erro ao gravar atualização de pedido no Supabase:", dbErr);
