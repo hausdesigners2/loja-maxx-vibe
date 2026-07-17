@@ -104,7 +104,6 @@ serve(async (req) => {
       });
     }
 
-    // [MELHORIA DE SEGURANÇA]: Validação de Autorização (BOLA / IDOR)
     // Garante que o usuário logado só pode gerar pagamento para o próprio pedido
     if (order.user_id && order.user_id !== user.id) {
       console.warn(`[mercadopago-checkout] TENTATIVA DE IDOR DETECTADA! Usuário ${user.id} tentou pagar o pedido ${order.id} do usuário ${order.user_id}.`);
@@ -144,7 +143,7 @@ serve(async (req) => {
       });
     }
 
-    // [MELHORIA DE SEGURANÇA]: Validação robusta de preços, descontos e total (Anti-Tampering)
+    // Validação robusta de preços, descontos e total (Anti-Tampering)
     const orderItems = order.order_items || [];
     if (orderItems.length === 0) {
       console.error("[mercadopago-checkout] Erro: O pedido não possui itens.");
@@ -290,9 +289,12 @@ serve(async (req) => {
       phoneNumber = cleanPhone;
     }
 
+    // Formata rigorosamente o valor monetário com ponto decimal para evitar erros de API
+    const finalAmount = Number(Number(recalculatedTotal).toFixed(2));
+
     // Monta o payload do Mercado Pago utilizando estritamente o valor recalculado no servidor
     const mpPayload = {
-      transaction_amount: Number(recalculatedTotal),
+      transaction_amount: finalAmount,
       description: `Pedido #${order.order_number || order.id.slice(0, 8)} - Lojas Maxx`,
       payment_method_id: "pix",
       payer: {
@@ -389,7 +391,7 @@ serve(async (req) => {
         payment_id: paymentId,
         qr_code: qrCode,
         qr_code_base64: qrCodeBase64,
-        amount: recalculatedTotal,
+        amount: finalAmount,
         status: status
       }),
       {
