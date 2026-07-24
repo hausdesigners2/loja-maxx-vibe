@@ -46,7 +46,8 @@ const DEFAULT_CATEGORIES = [
   { id: "4", name: "Laticínios", slug: "laticinios", icon: "🧀", sort_order: 4, created_at: "" },
   { id: "5", name: "Limpeza", slug: "limpeza", icon: "🧹", sort_order: 5, created_at: "" },
   { id: "6", name: "Biscoitos", slug: "biscoitos", icon: "🍪", sort_order: 6, created_at: "" },
-  { id: "7", name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7, created_at: "" }
+  { id: "7", name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7, created_at: "" },
+  { id: "8", name: "Padaria", slug: "padaria", icon: "🍞", sort_order: 8, created_at: "" }
 ];
 
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
