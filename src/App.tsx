@@ -5,7 +5,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CartProvider } from "@/contexts/CartContext";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { AuthProvider } from "@/contexts/AuthContext";
 import SplashScreen from "@/components/SplashScreen";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
@@ -29,20 +29,26 @@ import AdminNotificationsPage from "./pages/AdminNotificationsPage";
 const queryClient = new QueryClient();
 
 function AppContent() {
-  const { loading } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
+  const [isFadingOut, setIsFadingOut] = useState(false);
 
   useEffect(() => {
-    if (!loading) {
-      // Allow a smooth fade-out transition before unmounting the splash screen
-      const timer = setTimeout(() => setShowSplash(false), 800);
-      return () => clearTimeout(timer);
-    }
-  }, [loading]);
+    // Start the fade-out transition after exactly 3 seconds (3000ms)
+    const fadeTimer = setTimeout(() => {
+      setIsFadingOut(true);
+      // Completely unmount the splash screen after the 700ms CSS transition finishes
+      const removeTimer = setTimeout(() => {
+        setShowSplash(false);
+      }, 700);
+      return () => clearTimeout(removeTimer);
+    }, 3000);
+
+    return () => clearTimeout(fadeTimer);
+  }, []);
 
   return (
     <>
-      {showSplash && <SplashScreen isFadingOut={!loading} />}
+      {showSplash && <SplashScreen isFadingOut={isFadingOut} />}
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/categoria/:slug" element={<CategoryPage />} />

@@ -10,24 +10,27 @@ interface SplashScreenProps {
 export default function SplashScreen({ isFadingOut }: SplashScreenProps) {
   const [progress, setProgress] = useState(0);
 
-  // Smoothly animate the progress bar
+  // Smoothly animate the progress bar to reach ~95% over 3 seconds
   useEffect(() => {
     if (isFadingOut) {
       setProgress(100);
       return;
     }
 
+    const duration = 3000; // 3 seconds
+    const intervalTime = 50; // Update every 50ms
+    const totalSteps = duration / intervalTime;
+    const increment = 95 / totalSteps;
+
     const interval = setInterval(() => {
       setProgress((prev) => {
-        if (prev >= 90) {
+        if (prev >= 95) {
           clearInterval(interval);
-          return 90; // Hold at 90% until loading is complete
+          return 95;
         }
-        // Faster progress at the beginning, slowing down
-        const increment = Math.max(1, Math.floor((100 - prev) / 10));
         return prev + increment;
       });
-    }, 150);
+    }, intervalTime);
 
     return () => clearInterval(interval);
   }, [isFadingOut]);
