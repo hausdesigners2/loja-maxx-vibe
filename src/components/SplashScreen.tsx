@@ -49,7 +49,7 @@ export default function SplashScreen({ isFadingOut }: SplashScreenProps) {
       <div className="flex flex-col items-center justify-center gap-4">
         <div className="relative h-48 w-48 overflow-hidden rounded-3xl bg-transparent">
           <video
-            src="/lojasmaxx.webm"
+            src="/lojamaxx2.webm"
             autoPlay
             loop
             muted
