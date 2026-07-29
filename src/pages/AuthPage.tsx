@@ -20,7 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { LegalDocumentModal, TERMS_VERSION, PRIVACY_VERSION } from "@/components/LegalDocuments";
 
 export default function AuthPage() {
-  const { signIn, signUp, verifyAdmin2FA, setupAdmin2FA, signOut, getAdmin2FASecret } = useAuth();
+  const { signIn, signUp, verifyAdmin2FA, setupAdmin2FA, signOut, getAdmin2FASecret, useCustomMFA } = useAuth();
   const nav = useNavigate();
   const [tab, setTab] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
@@ -147,19 +147,33 @@ export default function AuthPage() {
           // É administrador! Checar se já tem 2FA aprovado nesta aba/sessão
           const isApproved = sessionStorage.getItem("loja-maxx-admin-2fa-approved") === "true";
           if (!isApproved) {
-            // Verifica se o admin já tem uma chave 2FA configurada nativamente no Supabase Auth
-            const { data: factors } = await supabase.auth.mfa.listFactors();
-            const hasVerified = factors?.all?.some(f => f.status === 'verified');
-
-            if (hasVerified) {
-              setHasSecret(true);
+            if (useCustomMFA) {
+              const isVerified = localStorage.getItem(`loja-maxx-2fa-verified:${data.user.id}`) === "true";
+              if (isVerified) {
+                setHasSecret(true);
+              } else {
+                const res = await getAdmin2FASecret();
+                if (res) {
+                  setAdmin2FASecret(res.secret);
+                  setAdmin2FAQrCode(res.qrCode);
+                  setHasSecret(false);
+                }
+              }
             } else {
-              // Caso não tenha segredo, inicia o fluxo de configuração do 2FA nativo
-              const res = await getAdmin2FASecret();
-              if (res) {
-                setAdmin2FASecret(res.secret);
-                setAdmin2FAQrCode(res.qrCode);
-                setHasSecret(false);
+              // Verifica se o admin já tem uma chave 2FA configurada nativamente no Supabase Auth
+              const { data: factors } = await supabase.auth.mfa.listFactors();
+              const hasVerified = factors?.all?.some(f => f.status === 'verified');
+
+              if (hasVerified) {
+                setHasSecret(true);
+              } else {
+                // Caso não tenha segredo, inicia o fluxo de configuração do 2FA nativo
+                const res = await getAdmin2FASecret();
+                if (res) {
+                  setAdmin2FASecret(res.secret);
+                  setAdmin2FAQrCode(res.qrCode);
+                  setHasSecret(false);
+                }
               }
             }
 
@@ -373,7 +387,11 @@ export default function AuthPage() {
                     <div className="flex flex-col items-center space-y-3">
                       <div className="bg-white p-2 rounded-xl aspect-square w-40 h-40 flex items-center justify-center shadow-md">
                         {admin2FAQrCode ? (
-                          <img src={admin2FAQrCode} alt="QR Code de Configuração" className="w-full h-full object-contain" />
+                          admin2FAQrCode.startsWith("<svg") ? (
+                            <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: admin2FAQrCode }} />
+                          ) : (
+                            <img src={admin2FAQrCode} alt="QR Code de Configuração" className="w-full h-full object-contain" />
+                          )
                         ) : (
                           <RefreshCw className="h-8 w-8 animate-spin text-primary" />
                         )}

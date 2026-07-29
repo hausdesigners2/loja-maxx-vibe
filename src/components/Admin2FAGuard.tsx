@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 
 export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
-  const { isAdmin, isAdmin2FAApproved, verifyAdmin2FA, setupAdmin2FA, getAdmin2FASecret, user, signOut } = useAuth();
+  const { isAdmin, isAdmin2FAApproved, verifyAdmin2FA, setupAdmin2FA, getAdmin2FASecret, useCustomMFA, user, signOut } = useAuth();
   const [hasSecret, setHasSecret] = useState<boolean | null>(null);
   const [secret, setSecret] = useState("");
   const [qrCode, setQrCode] = useState("");
@@ -18,9 +18,9 @@ export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isAdmin && !isAdmin2FAApproved) {
-      supabase.auth.mfa.listFactors().then(({ data, error }) => {
-        const hasVerified = data?.all?.some(f => f.status === 'verified');
-        if (hasVerified) {
+      if (useCustomMFA && user) {
+        const isVerified = localStorage.getItem(`loja-maxx-2fa-verified:${user.id}`) === "true";
+        if (isVerified) {
           setHasSecret(true);
         } else {
           setHasSecret(false);
@@ -31,9 +31,24 @@ export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
             }
           });
         }
-      });
+      } else {
+        supabase.auth.mfa.listFactors().then(({ data, error }) => {
+          const hasVerified = data?.all?.some(f => f.status === 'verified');
+          if (hasVerified) {
+            setHasSecret(true);
+          } else {
+            setHasSecret(false);
+            getAdmin2FASecret().then((res) => {
+              if (res) {
+                setSecret(res.secret);
+                setQrCode(res.qrCode);
+              }
+            });
+          }
+        });
+      }
     }
-  }, [isAdmin, isAdmin2FAApproved]);
+  }, [isAdmin, isAdmin2FAApproved, useCustomMFA, user]);
 
   if (!isAdmin) return null;
 
@@ -141,7 +156,11 @@ export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
             <div className="flex flex-col items-center space-y-3">
               <div className="bg-white p-2 rounded-xl aspect-square w-40 h-40 flex items-center justify-center shadow-md">
                 {qrCode ? (
-                  <img src={qrCode} alt="QR Code de Configuração" className="w-full h-full object-contain" />
+                  qrCode.startsWith("<svg") ? (
+                    <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: qrCode }} />
+                  ) : (
+                    <img src={qrCode} alt="QR Code de Configuração" className="w-full h-full object-contain" />
+                  )
                 ) : (
                   <RefreshCw className="h-8 w-8 animate-spin text-primary" />
                 )}
