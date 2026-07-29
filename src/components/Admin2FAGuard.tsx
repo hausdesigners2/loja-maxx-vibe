@@ -11,6 +11,7 @@ export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
   const { isAdmin, isAdmin2FAApproved, verifyAdmin2FA, setupAdmin2FA, getAdmin2FASecret, user, signOut } = useAuth();
   const [hasSecret, setHasSecret] = useState<boolean | null>(null);
   const [secret, setSecret] = useState("");
+  const [qrCode, setQrCode] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -23,9 +24,10 @@ export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
           setHasSecret(true);
         } else {
           setHasSecret(false);
-          getAdmin2FASecret().then((sec) => {
-            if (sec) {
-              setSecret(sec);
+          getAdmin2FASecret().then((res) => {
+            if (res) {
+              setSecret(res.secret);
+              setQrCode(res.qrCode);
             }
           });
         }
@@ -91,11 +93,6 @@ export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // URL do QR Code usando a API pública do Google Charts (geração de QR Code segura e rápida)
-  const qrCodeUrl = `https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=${encodeURIComponent(
-    `otpauth://totp/Lojas%20Maxx:${user?.email || "Admin"}?secret=${secret}&issuer=Lojas%20Maxx`
-  )}`;
-
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4 animate-fade-in">
       <div className="w-full max-w-md space-y-6 rounded-2xl bg-card p-6 border border-border/50 shadow-glow">
@@ -143,7 +140,11 @@ export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
           <div className="space-y-5">
             <div className="flex flex-col items-center space-y-3">
               <div className="bg-white p-2 rounded-xl aspect-square w-40 h-40 flex items-center justify-center shadow-md">
-                <img src={qrCodeUrl} alt="QR Code de Configuração" className="w-full h-full object-contain" />
+                {qrCode ? (
+                  <img src={qrCode} alt="QR Code de Configuração" className="w-full h-full object-contain" />
+                ) : (
+                  <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+                )}
               </div>
               <p className="text-xs text-muted-foreground max-w-xs text-center">
                 Escaneie o QR Code acima com o <strong>Google Authenticator</strong> ou <strong>Authy</strong>.

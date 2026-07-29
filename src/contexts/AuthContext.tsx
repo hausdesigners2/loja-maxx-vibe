@@ -15,7 +15,7 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   verifyAdmin2FA: (code: string) => Promise<boolean>;
   setupAdmin2FA: (secret: string, code: string) => Promise<boolean>;
-  getAdmin2FASecret: () => Promise<string | null>;
+  getAdmin2FASecret: () => Promise<{ secret: string; qrCode: string } | null>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -165,9 +165,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   };
 
-  const getAdmin2FASecret = async (): Promise<string | null> => {
+  const getAdmin2FASecret = async (): Promise<{ secret: string; qrCode: string } | null> => {
     if (!user) return null;
     try {
+      // Clean up any existing unverified TOTP factors first to avoid duplicates and StrictMode conflicts
+      const { data: factors } = await supabase.auth.mfa.listFactors();
+      const unverifiedFactors = factors?.all?.filter(f => f.status === 'unverified') || [];
+      for (const factor of unverifiedFactors) {
+        await supabase.auth.mfa.unenroll({ factorId: factor.id });
+      }
+
       // Enroll a new TOTP factor natively in Supabase Auth
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: 'totp',
@@ -177,7 +184,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (error) throw error;
       setMfaFactor(data);
-      return data.totp.secret;
+      return {
+        secret: data.totp.secret,
+        qrCode: data.totp.qr_code // Secure SVG data URL directly from Supabase
+      };
     } catch (e) {
       console.error("Erro ao iniciar inscrição MFA nativa:", e);
     }

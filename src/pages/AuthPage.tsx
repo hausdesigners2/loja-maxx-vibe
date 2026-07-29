@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronLeft, ShoppingBag, CheckCircle2, Eye, EyeOff, KeyRound, AlertCircle, Copy, Check } from "lucide-react";
+import { ChevronLeft, ShoppingBag, CheckCircle2, Eye, EyeOff, KeyRound, AlertCircle, Copy, Check, RefreshCw } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,6 +47,7 @@ export default function AuthPage() {
   const [showAdmin2FA, setShowAdmin2FA] = useState(false);
   const [admin2FACode, setAdmin2FACode] = useState("");
   const [admin2FASecret, setAdmin2FASecret] = useState<string | null>(null);
+  const [admin2FAQrCode, setAdmin2FAQrCode] = useState<string | null>(null);
   const [hasSecret, setHasSecret] = useState<boolean | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -154,9 +155,10 @@ export default function AuthPage() {
               setHasSecret(true);
             } else {
               // Caso não tenha segredo, inicia o fluxo de configuração do 2FA nativo
-              const sec = await getAdmin2FASecret();
-              if (sec) {
-                setAdmin2FASecret(sec);
+              const res = await getAdmin2FASecret();
+              if (res) {
+                setAdmin2FASecret(res.secret);
+                setAdmin2FAQrCode(res.qrCode);
                 setHasSecret(false);
               }
             }
@@ -225,7 +227,7 @@ export default function AuthPage() {
     const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
-    setForgotLoading(false);
+    setForgotLoading(true);
     if (error) {
       console.error("Lovable Cloud auth password reset error:", error);
       toast.error(friendlyAuthError(error.message), { description: formatAuthError(error) });
@@ -279,10 +281,6 @@ export default function AuthPage() {
         ) : showAdmin2FA ? (
           /* TELA 2FA OBRIGATÓRIA PARA ADMINISTRADORES */
           (() => {
-            const qrCodeUrl = `https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=${encodeURIComponent(
-              `otpauth://totp/Lojas%20Maxx:${email || "Admin"}?secret=${admin2FASecret}&issuer=Lojas%20Maxx`
-            )}`;
-
             const handleVerify2FA = async (e: React.FormEvent) => {
               e.preventDefault();
               if (admin2FACode.length !== 6) {
@@ -374,7 +372,11 @@ export default function AuthPage() {
                   <div className="space-y-5">
                     <div className="flex flex-col items-center space-y-3">
                       <div className="bg-white p-2 rounded-xl aspect-square w-40 h-40 flex items-center justify-center shadow-md">
-                        <img src={qrCodeUrl} alt="QR Code de Configuração" className="w-full h-full object-contain" />
+                        {admin2FAQrCode ? (
+                          <img src={admin2FAQrCode} alt="QR Code de Configuração" className="w-full h-full object-contain" />
+                        ) : (
+                          <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground max-w-xs text-center">
                         Escaneie o QR Code acima com o <strong>Google Authenticator</strong> ou <strong>Authy</strong>.
