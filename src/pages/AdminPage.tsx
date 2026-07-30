@@ -329,7 +329,7 @@ export default function AdminPage() {
                   <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm hover:bg-secondary">
                     <Upload className="h-4 w-4" />
                     {uploading ? "Enviando..." : "Carregar imagem"}
-                    <input type="file" accept="image/*" className="hidden"
+                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
                       onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])} />
                   </label>
                 </div>

@@ -30,7 +30,7 @@ const empty: FormState = {
   title: "", subtitle: "", image_url: "", link_url: "", button_text: "", active: true,
 };
 
-const ALLOWED = ["image/jpeg", "image/png"];
+const ALLOWED = ["image/jpeg", "image/png", "image/webp"];
 const MAX_SIZE = 5 * 1024 * 1024;
 
 export default function AdminBannersPage() {
@@ -99,7 +99,7 @@ export default function AdminBannersPage() {
     });
 
   const onUpload = async (file: File) => {
-    if (!ALLOWED.includes(file.type)) return toast.error("Use JPG ou PNG.");
+    if (!ALLOWED.includes(file.type)) return toast.error("Use JPG, PNG ou WebP.");
     if (file.size > MAX_SIZE) return toast.error("Imagem muito grande (máx 5MB).");
     setUploading(true);
     try {
@@ -242,7 +242,7 @@ export default function AdminBannersPage() {
 
             <div className="space-y-3">
               <div>
-                <Label>Imagem (1600x600 px, JPG ou PNG)</Label>
+                <Label>Imagem (1600x600 px, JPG, PNG ou WebP)</Label>
                 <div className="mt-1 flex items-center gap-3">
                   <div className="aspect-[8/3] w-32 shrink-0 overflow-hidden rounded-xl bg-secondary">
                     {form.image_url
@@ -252,7 +252,7 @@ export default function AdminBannersPage() {
                   <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm hover:bg-secondary">
                     <Upload className="h-4 w-4" />
                     {uploading ? "Enviando..." : "Carregar"}
-                    <input type="file" accept="image/jpeg,image/png" className="hidden"
+                    <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden"
                       onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])} />
                   </label>
                 </div>
