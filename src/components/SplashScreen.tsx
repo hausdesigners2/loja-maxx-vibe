@@ -10,27 +10,24 @@ interface SplashScreenProps {
 export default function SplashScreen({ isFadingOut }: SplashScreenProps) {
   const [progress, setProgress] = useState(0);
 
-  // Smoothly animate the progress bar to reach ~95% over 3 seconds
+  // Smoothly animate the progress bar
   useEffect(() => {
     if (isFadingOut) {
       setProgress(100);
       return;
     }
 
-    const duration = 3000; // 3 seconds
-    const intervalTime = 50; // Update every 50ms
-    const totalSteps = duration / intervalTime;
-    const increment = 95 / totalSteps;
-
     const interval = setInterval(() => {
       setProgress((prev) => {
-        if (prev >= 95) {
+        if (prev >= 90) {
           clearInterval(interval);
-          return 95;
+          return 90; // Hold at 90% until loading is complete
         }
+        // Faster progress at the beginning, slowing down
+        const increment = Math.max(1, Math.floor((100 - prev) / 10));
         return prev + increment;
       });
-    }, intervalTime);
+    }, 150);
 
     return () => clearInterval(interval);
   }, [isFadingOut]);
@@ -49,7 +46,7 @@ export default function SplashScreen({ isFadingOut }: SplashScreenProps) {
       <div className="flex flex-col items-center justify-center gap-4">
         <div className="relative h-48 w-48 overflow-hidden rounded-3xl bg-transparent">
           <video
-            src="/lojamaxx2.webm"
+            src="/lojasmaxx.webm"
             autoPlay
             loop
             muted

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState, ReactNode } fro
 import { AuthError, Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { formatAuthError, logSecurityEvent } from "@/lib/security";
+import { verifyTOTP } from "@/lib/totp";
 import { loginOneSignalUser, logoutOneSignalUser } from "@/lib/onesignal";
 
 interface AuthContextValue {
@@ -34,7 +35,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return false;
   });
   const [loading, setLoading] = useState(true);
-  const [mfaFactor, setMfaFactor] = useState<any>(null);
   const inactivityTimer = useRef<number | null>(null);
 
   /* ---------- inactivity logout ---------- */
@@ -168,80 +168,70 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const getAdmin2FASecret = async (): Promise<string | null> => {
     if (!user) return null;
     try {
-      // Enroll a new TOTP factor natively in Supabase Auth
-      const { data, error } = await supabase.auth.mfa.enroll({
-        factorType: 'totp',
-        issuer: 'Lojas Maxx',
-        friendlyName: user.email || 'Admin'
-      });
+      const { data, error } = await supabase
+        .from("customer_profiles")
+        .select("complement")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-      if (error) throw error;
-      setMfaFactor(data);
-      return data.totp.secret;
+      if (error || !data || !data.complement) return null;
+      if (data.complement.startsWith("[2FA]:")) {
+        return data.complement.replace("[2FA]:", "").trim();
+      }
     } catch (e) {
-      console.error("Erro ao iniciar inscrição MFA nativa:", e);
+      console.error("Erro ao buscar segredo 2FA:", e);
     }
     return null;
   };
 
   const verifyAdmin2FA = async (code: string): Promise<boolean> => {
-    if (!user) return false;
+    const secret = await getAdmin2FASecret();
+    if (!secret) return false;
+
     try {
-      const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
-      if (listError) throw listError;
-
-      const activeFactor = factors?.all?.find(f => f.status === 'verified');
-      if (!activeFactor) return false;
-
-      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
-        factorId: activeFactor.id
-      });
-      if (challengeError) throw challengeError;
-
-      const { data: verifyData, error: verifyError } = await supabase.auth.mfa.verify({
-        factorId: activeFactor.id,
-        challengeId: challenge.id,
-        code: code
-      });
-
-      if (verifyError) throw verifyError;
-
-      setIsAdmin2FAApproved(true);
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
+      const isValid = await verifyTOTP(secret, code);
+      if (isValid) {
+        setIsAdmin2FAApproved(true);
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
+        }
+        void logSecurityEvent("admin_access", { userId: user?.id, email: user?.email, metadata: { mfa: "success" } });
+        return true;
       }
-      void logSecurityEvent("admin_access", { userId: user.id, email: user.email, metadata: { mfa: "success" } });
-      return true;
     } catch (e) {
-      console.error("Erro ao verificar MFA nativo:", e);
+      console.error("Erro ao validar TOTP:", e);
     }
     return false;
   };
 
   const setupAdmin2FA = async (secret: string, code: string): Promise<boolean> => {
-    if (!user || !mfaFactor) return false;
+    if (!user) return false;
 
     try {
-      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
-        factorId: mfaFactor.id
-      });
-      if (challengeError) throw challengeError;
+      const isValid = await verifyTOTP(secret, code);
+      if (isValid) {
+        // Salva o segredo no perfil do cliente usando o campo complement
+        const { error } = await supabase
+          .from("customer_profiles")
+          .upsert({
+            user_id: user.id,
+            email: user.email,
+            complement: `[2FA]:${secret}`,
+            full_name: "Administrador",
+            phone: "00000000000",
+            address: "Painel Administrativo"
+          }, { onConflict: "user_id" });
 
-      const { data: verifyData, error: verifyError } = await supabase.auth.mfa.verify({
-        factorId: mfaFactor.id,
-        challengeId: challenge.id,
-        code: code
-      });
+        if (error) throw error;
 
-      if (verifyError) throw verifyError;
-
-      setIsAdmin2FAApproved(true);
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
+        setIsAdmin2FAApproved(true);
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
+        }
+        return true;
       }
-      return true;
     } catch (e) {
-      console.error("Erro ao configurar MFA nativo:", e);
+      console.error("Erro ao configurar TOTP:", e);
     }
     return false;
   };

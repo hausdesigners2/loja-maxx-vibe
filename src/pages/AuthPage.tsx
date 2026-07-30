@@ -20,7 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { LegalDocumentModal, TERMS_VERSION, PRIVACY_VERSION } from "@/components/LegalDocuments";
 
 export default function AuthPage() {
-  const { signIn, signUp, verifyAdmin2FA, setupAdmin2FA, signOut, getAdmin2FASecret } = useAuth();
+  const { signIn, signUp, verifyAdmin2FA, setupAdmin2FA, signOut } = useAuth();
   const nav = useNavigate();
   const [tab, setTab] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
@@ -146,19 +146,29 @@ export default function AuthPage() {
           // É administrador! Checar se já tem 2FA aprovado nesta aba/sessão
           const isApproved = sessionStorage.getItem("loja-maxx-admin-2fa-approved") === "true";
           if (!isApproved) {
-            // Verifica se o admin já tem uma chave 2FA configurada nativamente no Supabase Auth
-            const { data: factors } = await supabase.auth.mfa.listFactors();
-            const hasVerified = factors?.all?.some(f => f.status === 'verified');
+            // Verifica se o admin já tem uma chave 2FA configurada em seu perfil
+            const { data: profileData } = await supabase
+              .from("customer_profiles")
+              .select("complement")
+              .eq("user_id", data.user.id)
+              .maybeSingle();
 
-            if (hasVerified) {
+            const existingSecret = profileData?.complement?.startsWith("[2FA]:")
+              ? profileData.complement.replace("[2FA]:", "").trim()
+              : null;
+
+            if (existingSecret) {
+              setAdmin2FASecret(existingSecret);
               setHasSecret(true);
             } else {
-              // Caso não tenha segredo, inicia o fluxo de configuração do 2FA nativo
-              const sec = await getAdmin2FASecret();
-              if (sec) {
-                setAdmin2FASecret(sec);
-                setHasSecret(false);
+              // Caso não tenha segredo, inicia o fluxo de configuração do 2FA
+              const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+              let newSecret = "";
+              for (let i = 0; i < 16; i++) {
+                newSecret += chars.charAt(Math.floor(Math.random() * chars.length));
               }
+              setAdmin2FASecret(newSecret);
+              setHasSecret(false);
             }
 
             setShowAdmin2FA(true);

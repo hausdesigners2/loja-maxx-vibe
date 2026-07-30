@@ -3,9 +3,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Shield, Copy, Check, RefreshCw, LogOut } from "lucide-react";
+import { Shield, KeyRound, Copy, Check, RefreshCw, LogOut } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 
 export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
   const { isAdmin, isAdmin2FAApproved, verifyAdmin2FA, setupAdmin2FA, getAdmin2FASecret, user, signOut } = useAuth();
@@ -17,17 +16,18 @@ export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (isAdmin && !isAdmin2FAApproved) {
-      supabase.auth.mfa.listFactors().then(({ data, error }) => {
-        const hasVerified = data?.all?.some(f => f.status === 'verified');
-        if (hasVerified) {
+      getAdmin2FASecret().then((sec) => {
+        if (sec) {
           setHasSecret(true);
         } else {
           setHasSecret(false);
-          getAdmin2FASecret().then((sec) => {
-            if (sec) {
-              setSecret(sec);
-            }
-          });
+          // Gera um novo segredo Base32 seguro de 16 caracteres
+          const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+          let newSecret = "";
+          for (let i = 0; i < 16; i++) {
+            newSecret += chars.charAt(Math.floor(Math.random() * chars.length));
+          }
+          setSecret(newSecret);
         }
       });
     }
