@@ -170,40 +170,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   };
 
-  const getAdmin2FASecret = async (): Promise<{ secret: string; qrCode: string } | null> => {
+  const getLocal2FASecret = async (): Promise<{ secret: string; qrCode: string } | null> => {
     if (!user) return null;
-    try {
-      // 1. Tenta usar o MFA nativo do Supabase
-      const { data: factors } = await supabase.auth.mfa.listFactors();
-      const unverifiedFactors = factors?.all?.filter(f => f.status === 'unverified') || [];
-      for (const factor of unverifiedFactors) {
-        await supabase.auth.mfa.unenroll({ factorId: factor.id });
-      }
-
-      const { data, error } = await supabase.auth.mfa.enroll({
-        factorType: 'totp',
-        issuer: 'Lojas Maxx',
-        friendlyName: user.email || 'Admin'
-      });
-
-      if (!error && data) {
-        setMfaFactor(data);
-        setUseCustomMFA(false);
-        localStorage.setItem("loja-maxx-use-custom-mfa", "false");
-        return {
-          secret: data.totp.secret,
-          qrCode: data.totp.qr_code
-        };
-      }
-    } catch (e) {
-      console.warn("[AuthContext] Supabase MFA nativo indisponível ou desativado. Usando fallback local seguro.", e);
-    }
-
-    // 2. Fallback local seguro (TOTP gerado localmente)
-    setUseCustomMFA(true);
-    localStorage.setItem("loja-maxx-use-custom-mfa", "true");
-    
-    // Recupera ou gera uma chave secreta Base32 persistente para o admin local
     let localSecret = localStorage.getItem(`loja-maxx-2fa-secret:${user.id}`);
     if (!localSecret) {
       const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -225,8 +193,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (qrErr) {
       console.error("[AuthContext] Erro ao gerar QR Code local:", qrErr);
     }
-
     return null;
+  };
+
+  const getAdmin2FASecret = async (): Promise<{ secret: string; qrCode: string } | null> => {
+    if (!user) return null;
+
+    if (useCustomMFA) {
+      return getLocal2FASecret();
+    }
+
+    try {
+      // 1. Tenta usar o MFA nativo do Supabase
+      const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
+      if (listError) throw listError;
+
+      const unverifiedFactors = factors?.all?.filter(f => f.status === 'unverified') || [];
+      for (const factor of unverifiedFactors) {
+        await supabase.auth.mfa.unenroll({ factorId: factor.id });
+      }
+
+      const { data, error } = await supabase.auth.mfa.enroll({
+        factorType: 'totp',
+        issuer: 'Lojas Maxx',
+        friendlyName: user.email || 'Admin'
+      });
+
+      if (error) {
+        throw error; // Força o fallback para o TOTP local se houver erro na API do Supabase
+      }
+
+      if (data) {
+        setMfaFactor(data);
+        setUseCustomMFA(false);
+        localStorage.setItem("loja-maxx-use-custom-mfa", "false");
+        return {
+          secret: data.totp.secret,
+          qrCode: data.totp.qr_code
+        };
+      }
+    } catch (e) {
+      console.warn("[AuthContext] Supabase MFA nativo indisponível ou desativado. Usando fallback local seguro.", e);
+    }
+
+    // 2. Fallback local seguro (TOTP gerado localmente)
+    setUseCustomMFA(true);
+    localStorage.setItem("loja-maxx-use-custom-mfa", "true");
+    return getLocal2FASecret();
   };
 
   const verifyAdmin2FA = async (code: string): Promise<boolean> => {
