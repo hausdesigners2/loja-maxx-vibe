@@ -76,20 +76,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const applySession = async (sess: Session | null) => {
       if (!active) return;
-      setSession(sess);
-      setUser(sess?.user ?? null);
-      if (sess?.user) {
-        await checkAdmin(sess.user.id);
-        loginOneSignalUser(sess.user.id);
-      } else {
-        setIsAdmin(false);
-        setIsAdmin2FAApproved(false);
-        if (typeof window !== "undefined") {
-          sessionStorage.removeItem("loja-maxx-admin-2fa-approved");
+      try {
+        setSession(sess);
+        setUser(sess?.user ?? null);
+        if (sess?.user) {
+          await checkAdmin(sess.user.id);
+          try {
+            loginOneSignalUser(sess.user.id);
+          } catch (oneSignalErr) {
+            console.error("[AuthContext] Erro ao registrar OneSignal:", oneSignalErr);
+          }
+        } else {
+          setIsAdmin(false);
+          setIsAdmin2FAApproved(false);
+          if (typeof window !== "undefined") {
+            sessionStorage.removeItem("loja-maxx-admin-2fa-approved");
+          }
+          try {
+            logoutOneSignalUser();
+          } catch (oneSignalErr) {
+            console.error("[AuthContext] Erro ao deslogar OneSignal:", oneSignalErr);
+          }
         }
-        logoutOneSignalUser();
+      } catch (err) {
+        console.error("[AuthContext] Erro crítico ao aplicar sessão:", err);
+      } finally {
+        if (active) setLoading(false);
       }
-      if (active) setLoading(false);
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
