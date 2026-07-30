@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-secret',
 }
 
 serve(async (req) => {
@@ -12,15 +12,14 @@ serve(async (req) => {
 
   console.log("[onesignal-notification] Received push dispatch request");
 
-  const authHeader = req.headers.get('Authorization');
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+  const authHeader = req.headers.get('Authorization') || "";
+  const webhookSecret = req.headers.get('X-Webhook-Secret') || "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   
-  // Verify request is authorized (has service role key or correct developer anon key for webhook callbacks)
-  const isAuthorized = authHeader && (
+  // Verify request is authorized (has service role key OR matches the secure custom webhook secret)
+  const isAuthorized = 
     (serviceKey && authHeader.includes(serviceKey)) || 
-    authHeader.includes(anonKey)
-  );
+    (webhookSecret === "secure_webhook_token_loja_maxx_2026");
 
   if (!isAuthorized) {
     console.error("[onesignal-notification] Unauthorized webhook trigger attempt");
