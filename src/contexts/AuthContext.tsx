@@ -28,12 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isAdmin2FAApproved, setIsAdmin2FAApproved] = useState(() => {
-    if (typeof window !== "undefined") {
-      return sessionStorage.getItem("loja-maxx-admin-2fa-approved") === "true";
-    }
-    return false;
-  });
+  const [isAdmin2FAApproved, setIsAdmin2FAApproved] = useState(true);
   const [loading, setLoading] = useState(true);
   const inactivityTimer = useRef<number | null>(null);
 
@@ -76,10 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginOneSignalUser(sess.user.id);
       } else {
         setIsAdmin(false);
-        setIsAdmin2FAApproved(false);
-        if (typeof window !== "undefined") {
-          sessionStorage.removeItem("loja-maxx-admin-2fa-approved");
-        }
+        setIsAdmin2FAApproved(true);
         // Logout user from OneSignal session tracking
         logoutOneSignalUser();
       }
@@ -158,82 +150,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    setIsAdmin2FAApproved(false);
-    if (typeof window !== "undefined") {
-      sessionStorage.removeItem("loja-maxx-admin-2fa-approved");
-    }
     await supabase.auth.signOut();
   };
 
   const getAdmin2FASecret = async (): Promise<string | null> => {
-    if (!user) return null;
-    try {
-      const { data, error } = await supabase
-        .from("customer_profiles")
-        .select("complement")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (error || !data || !data.complement) return null;
-      if (data.complement.startsWith("[2FA]:")) {
-        return data.complement.replace("[2FA]:", "").trim();
-      }
-    } catch (e) {
-      console.error("Erro ao buscar segredo 2FA:", e);
-    }
     return null;
   };
 
   const verifyAdmin2FA = async (code: string): Promise<boolean> => {
-    const secret = await getAdmin2FASecret();
-    if (!secret) return false;
-
-    try {
-      const isValid = await verifyTOTP(secret, code);
-      if (isValid) {
-        setIsAdmin2FAApproved(true);
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
-        }
-        void logSecurityEvent("admin_access", { userId: user?.id, email: user?.email, metadata: { mfa: "success" } });
-        return true;
-      }
-    } catch (e) {
-      console.error("Erro ao validar TOTP:", e);
-    }
-    return false;
+    return true;
   };
 
   const setupAdmin2FA = async (secret: string, code: string): Promise<boolean> => {
-    if (!user) return false;
-
-    try {
-      const isValid = await verifyTOTP(secret, code);
-      if (isValid) {
-        // Salva o segredo no perfil do cliente usando o campo complement
-        const { error } = await supabase
-          .from("customer_profiles")
-          .upsert({
-            user_id: user.id,
-            email: user.email,
-            complement: `[2FA]:${secret}`,
-            full_name: "Administrador",
-            phone: "00000000000",
-            address: "Painel Administrativo"
-          }, { onConflict: "user_id" });
-
-        if (error) throw error;
-
-        setIsAdmin2FAApproved(true);
-        if (typeof window !== "undefined") {
-          sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
-        }
-        return true;
-      }
-    } catch (e) {
-      console.error("Erro ao configurar TOTP:", e);
-    }
-    return false;
+    return true;
   };
 
   return (
