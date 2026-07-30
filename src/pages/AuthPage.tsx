@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ChevronLeft, ShoppingBag, CheckCircle2, Eye, EyeOff, KeyRound, AlertCircle, Copy, Check, RefreshCw } from "lucide-react";
+import { ChevronLeft, ShoppingBag, CheckCircle2, Eye, EyeOff, KeyRound, AlertCircle, Copy, Check } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { LegalDocumentModal, TERMS_VERSION, PRIVACY_VERSION } from "@/components/LegalDocuments";
 
 export default function AuthPage() {
-  const { signIn, signUp, verifyAdmin2FA, setupAdmin2FA, signOut, getAdmin2FASecret, useCustomMFA } = useAuth();
+  const { signIn, signUp, verifyAdmin2FA, setupAdmin2FA, signOut } = useAuth();
   const nav = useNavigate();
   const [tab, setTab] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
@@ -47,7 +47,6 @@ export default function AuthPage() {
   const [showAdmin2FA, setShowAdmin2FA] = useState(false);
   const [admin2FACode, setAdmin2FACode] = useState("");
   const [admin2FASecret, setAdmin2FASecret] = useState<string | null>(null);
-  const [admin2FAQrCode, setAdmin2FAQrCode] = useState<string | null>(null);
   const [hasSecret, setHasSecret] = useState<boolean | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -147,34 +146,29 @@ export default function AuthPage() {
           // É administrador! Checar se já tem 2FA aprovado nesta aba/sessão
           const isApproved = sessionStorage.getItem("loja-maxx-admin-2fa-approved") === "true";
           if (!isApproved) {
-            if (useCustomMFA) {
-              const isVerified = localStorage.getItem(`loja-maxx-2fa-verified:${data.user.id}`) === "true";
-              if (isVerified) {
-                setHasSecret(true);
-              } else {
-                const res = await getAdmin2FASecret();
-                if (res) {
-                  setAdmin2FASecret(res.secret);
-                  setAdmin2FAQrCode(res.qrCode);
-                  setHasSecret(false);
-                }
-              }
-            } else {
-              // Verifica se o admin já tem uma chave 2FA configurada nativamente no Supabase Auth
-              const { data: factors } = await supabase.auth.mfa.listFactors();
-              const hasVerified = factors?.all?.some(f => f.status === 'verified');
+            // Verifica se o admin já tem uma chave 2FA configurada em seu perfil
+            const { data: profileData } = await supabase
+              .from("customer_profiles")
+              .select("complement")
+              .eq("user_id", data.user.id)
+              .maybeSingle();
 
-              if (hasVerified) {
-                setHasSecret(true);
-              } else {
-                // Caso não tenha segredo, inicia o fluxo de configuração do 2FA nativo
-                const res = await getAdmin2FASecret();
-                if (res) {
-                  setAdmin2FASecret(res.secret);
-                  setAdmin2FAQrCode(res.qrCode);
-                  setHasSecret(false);
-                }
+            const existingSecret = profileData?.complement?.startsWith("[2FA]:")
+              ? profileData.complement.replace("[2FA]:", "").trim()
+              : null;
+
+            if (existingSecret) {
+              setAdmin2FASecret(existingSecret);
+              setHasSecret(true);
+            } else {
+              // Caso não tenha segredo, inicia o fluxo de configuração do 2FA
+              const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+              let newSecret = "";
+              for (let i = 0; i < 16; i++) {
+                newSecret += chars.charAt(Math.floor(Math.random() * chars.length));
               }
+              setAdmin2FASecret(newSecret);
+              setHasSecret(false);
             }
 
             setShowAdmin2FA(true);
@@ -241,7 +235,7 @@ export default function AuthPage() {
     const { error } = await supabase.auth.resetPasswordForEmail(parsed.data, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
-    setForgotLoading(true);
+    setForgotLoading(false);
     if (error) {
       console.error("Lovable Cloud auth password reset error:", error);
       toast.error(friendlyAuthError(error.message), { description: formatAuthError(error) });
@@ -295,6 +289,10 @@ export default function AuthPage() {
         ) : showAdmin2FA ? (
           /* TELA 2FA OBRIGATÓRIA PARA ADMINISTRADORES */
           (() => {
+            const qrCodeUrl = `https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=${encodeURIComponent(
+              `otpauth://totp/Lojas%20Maxx:${email || "Admin"}?secret=${admin2FASecret}&issuer=Lojas%20Maxx`
+            )}`;
+
             const handleVerify2FA = async (e: React.FormEvent) => {
               e.preventDefault();
               if (admin2FACode.length !== 6) {
@@ -386,15 +384,7 @@ export default function AuthPage() {
                   <div className="space-y-5">
                     <div className="flex flex-col items-center space-y-3">
                       <div className="bg-white p-2 rounded-xl aspect-square w-40 h-40 flex items-center justify-center shadow-md">
-                        {admin2FAQrCode ? (
-                          admin2FAQrCode.startsWith("<svg") ? (
-                            <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: admin2FAQrCode }} />
-                          ) : (
-                            <img src={admin2FAQrCode} alt="QR Code de Configuração" className="w-full h-full object-contain" />
-                          )
-                        ) : (
-                          <RefreshCw className="h-8 w-8 animate-spin text-primary" />
-                        )}
+                        <img src={qrCodeUrl} alt="QR Code de Configuração" className="w-full h-full object-contain" />
                       </div>
                       <p className="text-xs text-muted-foreground max-w-xs text-center">
                         Escaneie o QR Code acima com o <strong>Google Authenticator</strong> ou <strong>Authy</strong>.

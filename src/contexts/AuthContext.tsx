@@ -2,9 +2,8 @@ import { createContext, useContext, useEffect, useRef, useState, ReactNode } fro
 import { AuthError, Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { formatAuthError, logSecurityEvent } from "@/lib/security";
+import { verifyTOTP } from "@/lib/totp";
 import { loginOneSignalUser, logoutOneSignalUser } from "@/lib/onesignal";
-import { generateTOTP, verifyTOTP } from "@/lib/totp";
-import QRCode from "qrcode";
 
 interface AuthContextValue {
   user: User | null;
@@ -12,17 +11,17 @@ interface AuthContextValue {
   isAdmin: boolean;
   isAdmin2FAApproved: boolean;
   loading: boolean;
-  useCustomMFA: boolean;
   signIn: (email: string, password: string) => Promise<{ data: any; error: string | null; errorDetails?: AuthError | null }>;
   signUp: (email: string, password: string, metadata?: Record<string, any>) => Promise<{ data: any; error: string | null; errorDetails?: AuthError | null }>;
   signOut: () => Promise<void>;
   verifyAdmin2FA: (code: string) => Promise<boolean>;
   setupAdmin2FA: (secret: string, code: string) => Promise<boolean>;
-  getAdmin2FASecret: () => Promise<{ secret: string; qrCode: string } | null>;
+  getAdmin2FASecret: () => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// 30 minutes of inactivity → automatic logout
 const INACTIVITY_MS = 30 * 60 * 1000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -36,13 +35,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return false;
   });
   const [loading, setLoading] = useState(true);
-  const [mfaFactor, setMfaFactor] = useState<any>(null);
-  const [useCustomMFA, setUseCustomMFA] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("loja-maxx-use-custom-mfa") === "true";
-    }
-    return false;
-  });
   const inactivityTimer = useRef<number | null>(null);
 
   /* ---------- inactivity logout ---------- */
@@ -76,37 +68,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const applySession = async (sess: Session | null) => {
       if (!active) return;
-      try {
-        setSession(sess);
-        setUser(sess?.user ?? null);
-        if (sess?.user) {
-          await checkAdmin(sess.user.id);
-          try {
-            loginOneSignalUser(sess.user.id);
-          } catch (oneSignalErr) {
-            console.error("[AuthContext] Erro ao registrar OneSignal:", oneSignalErr);
-          }
-        } else {
-          setIsAdmin(false);
-          setIsAdmin2FAApproved(false);
-          if (typeof window !== "undefined") {
-            sessionStorage.removeItem("loja-maxx-admin-2fa-approved");
-          }
-          try {
-            logoutOneSignalUser();
-          } catch (oneSignalErr) {
-            console.error("[AuthContext] Erro ao deslogar OneSignal:", oneSignalErr);
-          }
+      setSession(sess);
+      setUser(sess?.user ?? null);
+      if (sess?.user) {
+        await checkAdmin(sess.user.id);
+        // Link authenticated user session with OneSignal external_id
+        loginOneSignalUser(sess.user.id);
+      } else {
+        setIsAdmin(false);
+        setIsAdmin2FAApproved(false);
+        if (typeof window !== "undefined") {
+          sessionStorage.removeItem("loja-maxx-admin-2fa-approved");
         }
-      } catch (err) {
-        console.error("[AuthContext] Erro crítico ao aplicar sessão:", err);
-      } finally {
-        if (active) setLoading(false);
+        // Logout user from OneSignal session tracking
+        logoutOneSignalUser();
       }
+      if (active) setLoading(false);
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, sess) => {
       setLoading(true);
+      // defer to avoid deadlocks with supabase calls inside the callback
       setTimeout(() => { void applySession(sess); }, 0);
     });
 
@@ -183,123 +165,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut();
   };
 
-  const getLocal2FASecret = async (): Promise<{ secret: string; qrCode: string } | null> => {
+  const getAdmin2FASecret = async (): Promise<string | null> => {
     if (!user) return null;
-    let localSecret = localStorage.getItem(`loja-maxx-2fa-secret:${user.id}`);
-    if (!localSecret) {
-      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-      localSecret = "";
-      for (let i = 0; i < 16; i++) {
-        localSecret += chars[Math.floor(Math.random() * chars.length)];
-      }
-      localStorage.setItem(`loja-maxx-2fa-secret:${user.id}`, localSecret);
-    }
-
-    const otpauthUrl = `otpauth://totp/Lojas%20Maxx:${encodeURIComponent(user.email || "Admin")}?secret=${localSecret}&issuer=Lojas%20Maxx`;
-    
     try {
-      const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
-      return {
-        secret: localSecret,
-        qrCode: qrCodeDataUrl
-      };
-    } catch (qrErr) {
-      console.error("[AuthContext] Erro ao gerar QR Code local:", qrErr);
+      const { data, error } = await supabase
+        .from("customer_profiles")
+        .select("complement")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (error || !data || !data.complement) return null;
+      if (data.complement.startsWith("[2FA]:")) {
+        return data.complement.replace("[2FA]:", "").trim();
+      }
+    } catch (e) {
+      console.error("Erro ao buscar segredo 2FA:", e);
     }
     return null;
   };
 
-  const getAdmin2FASecret = async (): Promise<{ secret: string; qrCode: string } | null> => {
-    if (!user) return null;
-
-    if (useCustomMFA) {
-      return getLocal2FASecret();
-    }
+  const verifyAdmin2FA = async (code: string): Promise<boolean> => {
+    const secret = await getAdmin2FASecret();
+    if (!secret) return false;
 
     try {
-      // 1. Tenta usar o MFA nativo do Supabase
-      const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
-      if (listError) throw listError;
-
-      const unverifiedFactors = factors?.all?.filter(f => f.status === 'unverified') || [];
-      for (const factor of unverifiedFactors) {
-        await supabase.auth.mfa.unenroll({ factorId: factor.id });
-      }
-
-      const { data, error } = await supabase.auth.mfa.enroll({
-        factorType: 'totp',
-        issuer: 'Lojas Maxx',
-        friendlyName: user.email || 'Admin'
-      });
-
-      if (error) {
-        throw error; // Força o fallback para o TOTP local se houver erro na API do Supabase
-      }
-
-      if (data) {
-        setMfaFactor(data);
-        setUseCustomMFA(false);
-        localStorage.setItem("loja-maxx-use-custom-mfa", "false");
-        return {
-          secret: data.totp.secret,
-          qrCode: data.totp.qr_code
-        };
-      }
-    } catch (e) {
-      console.warn("[AuthContext] Supabase MFA nativo indisponível ou desativado. Usando fallback local seguro.", e);
-    }
-
-    // 2. Fallback local seguro (TOTP gerado localmente)
-    setUseCustomMFA(true);
-    localStorage.setItem("loja-maxx-use-custom-mfa", "true");
-    return getLocal2FASecret();
-  };
-
-  const verifyAdmin2FA = async (code: string): Promise<boolean> => {
-    if (!user) return false;
-
-    if (useCustomMFA) {
-      const localSecret = localStorage.getItem(`loja-maxx-2fa-secret:${user.id}`);
-      if (!localSecret) return false;
-      const isValid = await verifyTOTP(localSecret, code);
+      const isValid = await verifyTOTP(secret, code);
       if (isValid) {
         setIsAdmin2FAApproved(true);
-        sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
-        localStorage.setItem(`loja-maxx-2fa-verified:${user.id}`, "true");
-        void logSecurityEvent("admin_access", { userId: user.id, email: user.email, metadata: { mfa: "success_local" } });
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
+        }
+        void logSecurityEvent("admin_access", { userId: user?.id, email: user?.email, metadata: { mfa: "success" } });
         return true;
       }
-      return false;
-    }
-
-    try {
-      const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
-      if (listError) throw listError;
-
-      const activeFactor = factors?.all?.find(f => f.status === 'verified');
-      if (!activeFactor) return false;
-
-      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
-        factorId: activeFactor.id
-      });
-      if (challengeError) throw challengeError;
-
-      const { data: verifyData, error: verifyError } = await supabase.auth.mfa.verify({
-        factorId: activeFactor.id,
-        challengeId: challenge.id,
-        code: code
-      });
-
-      if (verifyError) throw verifyError;
-
-      setIsAdmin2FAApproved(true);
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
-      }
-      void logSecurityEvent("admin_access", { userId: user.id, email: user.email, metadata: { mfa: "success" } });
-      return true;
     } catch (e) {
-      console.error("Erro ao verificar MFA nativo:", e);
+      console.error("Erro ao validar TOTP:", e);
     }
     return false;
   };
@@ -307,46 +207,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const setupAdmin2FA = async (secret: string, code: string): Promise<boolean> => {
     if (!user) return false;
 
-    if (useCustomMFA) {
+    try {
       const isValid = await verifyTOTP(secret, code);
       if (isValid) {
+        // Salva o segredo no perfil do cliente usando o campo complement
+        const { error } = await supabase
+          .from("customer_profiles")
+          .upsert({
+            user_id: user.id,
+            email: user.email,
+            complement: `[2FA]:${secret}`,
+            full_name: "Administrador",
+            phone: "00000000000",
+            address: "Painel Administrativo"
+          }, { onConflict: "user_id" });
+
+        if (error) throw error;
+
         setIsAdmin2FAApproved(true);
-        sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
-        localStorage.setItem(`loja-maxx-2fa-verified:${user.id}`, "true");
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
+        }
         return true;
       }
-      return false;
-    }
-
-    if (!mfaFactor) return false;
-
-    try {
-      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
-        factorId: mfaFactor.id
-      });
-      if (challengeError) throw challengeError;
-
-      const { data: verifyData, error: verifyError } = await supabase.auth.mfa.verify({
-        factorId: mfaFactor.id,
-        challengeId: challenge.id,
-        code: code
-      });
-
-      if (verifyError) throw verifyError;
-
-      setIsAdmin2FAApproved(true);
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("loja-maxx-admin-2fa-approved", "true");
-      }
-      return true;
     } catch (e) {
-      console.error("Erro ao configurar MFA nativo:", e);
+      console.error("Erro ao configurar TOTP:", e);
     }
     return false;
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, isAdmin, isAdmin2FAApproved, loading, useCustomMFA, signIn, signUp, signOut, verifyAdmin2FA, setupAdmin2FA, getAdmin2FASecret }}>
+    <AuthContext.Provider value={{ user, session, isAdmin, isAdmin2FAApproved, loading, signIn, signUp, signOut, verifyAdmin2FA, setupAdmin2FA, getAdmin2FASecret }}>
       {children}
     </AuthContext.Provider>
   );

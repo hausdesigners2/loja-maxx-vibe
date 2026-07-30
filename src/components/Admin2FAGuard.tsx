@@ -3,52 +3,35 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Shield, Copy, Check, RefreshCw, LogOut } from "lucide-react";
+import { Shield, KeyRound, Copy, Check, RefreshCw, LogOut } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 
 export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
-  const { isAdmin, isAdmin2FAApproved, verifyAdmin2FA, setupAdmin2FA, getAdmin2FASecret, useCustomMFA, user, signOut } = useAuth();
+  const { isAdmin, isAdmin2FAApproved, verifyAdmin2FA, setupAdmin2FA, getAdmin2FASecret, user, signOut } = useAuth();
   const [hasSecret, setHasSecret] = useState<boolean | null>(null);
   const [secret, setSecret] = useState("");
-  const [qrCode, setQrCode] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (isAdmin && !isAdmin2FAApproved) {
-      if (useCustomMFA && user) {
-        const isVerified = localStorage.getItem(`loja-maxx-2fa-verified:${user.id}`) === "true";
-        if (isVerified) {
+      getAdmin2FASecret().then((sec) => {
+        if (sec) {
           setHasSecret(true);
         } else {
           setHasSecret(false);
-          getAdmin2FASecret().then((res) => {
-            if (res) {
-              setSecret(res.secret);
-              setQrCode(res.qrCode);
-            }
-          });
-        }
-      } else {
-        supabase.auth.mfa.listFactors().then(({ data, error }) => {
-          const hasVerified = data?.all?.some(f => f.status === 'verified');
-          if (hasVerified) {
-            setHasSecret(true);
-          } else {
-            setHasSecret(false);
-            getAdmin2FASecret().then((res) => {
-              if (res) {
-                setSecret(res.secret);
-                setQrCode(res.qrCode);
-              }
-            });
+          // Gera um novo segredo Base32 seguro de 16 caracteres
+          const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+          let newSecret = "";
+          for (let i = 0; i < 16; i++) {
+            newSecret += chars.charAt(Math.floor(Math.random() * chars.length));
           }
-        });
-      }
+          setSecret(newSecret);
+        }
+      });
     }
-  }, [isAdmin, isAdmin2FAApproved, useCustomMFA, user]);
+  }, [isAdmin, isAdmin2FAApproved]);
 
   if (!isAdmin) return null;
 
@@ -108,6 +91,11 @@ export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // URL do QR Code usando a API pública do Google Charts (geração de QR Code segura e rápida)
+  const qrCodeUrl = `https://chart.googleapis.com/chart?chs=200x200&chld=M|0&cht=qr&chl=${encodeURIComponent(
+    `otpauth://totp/Lojas%20Maxx:${user?.email || "Admin"}?secret=${secret}&issuer=Lojas%20Maxx`
+  )}`;
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4 animate-fade-in">
       <div className="w-full max-w-md space-y-6 rounded-2xl bg-card p-6 border border-border/50 shadow-glow">
@@ -155,15 +143,7 @@ export function Admin2FAGuard({ children }: { children: React.ReactNode }) {
           <div className="space-y-5">
             <div className="flex flex-col items-center space-y-3">
               <div className="bg-white p-2 rounded-xl aspect-square w-40 h-40 flex items-center justify-center shadow-md">
-                {qrCode ? (
-                  qrCode.startsWith("<svg") ? (
-                    <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: qrCode }} />
-                  ) : (
-                    <img src={qrCode} alt="QR Code de Configuração" className="w-full h-full object-contain" />
-                  )
-                ) : (
-                  <RefreshCw className="h-8 w-8 animate-spin text-primary" />
-                )}
+                <img src={qrCodeUrl} alt="QR Code de Configuração" className="w-full h-full object-contain" />
               </div>
               <p className="text-xs text-muted-foreground max-w-xs text-center">
                 Escaneie o QR Code acima com o <strong>Google Authenticator</strong> ou <strong>Authy</strong>.
