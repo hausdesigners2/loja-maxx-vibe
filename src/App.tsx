@@ -31,18 +31,29 @@ const queryClient = new QueryClient();
 function AppContent() {
   const { loading } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
+  const [minTimeElapsed, setMinTimeElapsed] = useState(false);
+
+  // Garante que a tela de splash fique visível por pelo menos 3 segundos (3000ms)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMinTimeElapsed(true);
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const isFadingOut = !loading && minTimeElapsed;
 
   useEffect(() => {
-    if (!loading) {
-      // Allow a smooth fade-out transition before unmounting the splash screen
+    if (isFadingOut) {
+      // Aguarda a animação de fade-out (700ms) antes de desmontar o componente
       const timer = setTimeout(() => setShowSplash(false), 800);
       return () => clearTimeout(timer);
     }
-  }, [loading]);
+  }, [isFadingOut]);
 
   return (
     <>
-      {showSplash && <SplashScreen isFadingOut={!loading} />}
+      {showSplash && <SplashScreen isFadingOut={isFadingOut} />}
       <Routes>
         <Route path="/" element={<Index />} />
         <Route path="/categoria/:slug" element={<CategoryPage />} />
