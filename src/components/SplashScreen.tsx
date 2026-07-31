@@ -43,10 +43,10 @@ export default function SplashScreen({ isFadingOut }: SplashScreenProps) {
       <div className="h-12" />
 
       {/* Centered Metallic Gold App Icon Video */}
-      <div className="flex flex-col items-center justify-center gap-4">
-        <div className="relative h-48 w-48 overflow-hidden rounded-3xl bg-transparent">
+      <div className="flex flex-col items-center justify-center gap-6">
+        <div className="relative h-56 w-56 overflow-hidden rounded-3xl bg-transparent">
           <video
-            src="/lojasmaxx.webm"
+            src="/lojamaxx2.webm"
             autoPlay
             loop
             muted
@@ -56,14 +56,14 @@ export default function SplashScreen({ isFadingOut }: SplashScreenProps) {
         </div>
         
         {/* Loading Text */}
-        <p className="animate-pulse text-sm font-medium tracking-widest text-white/90 uppercase">
-          Carregando ofertas!
+        <p className="animate-pulse text-sm font-light tracking-[0.2em] text-white uppercase">
+          Carregando ofertas
         </p>
       </div>
 
       {/* Bottom Loading Bar Container */}
       <div className="w-full max-w-xs space-y-4 pb-12">
-        <div className="h-[3px] w-full overflow-hidden rounded-full bg-white/10">
+        <div className="h-[2px] w-full overflow-hidden rounded-full bg-white/10">
           <div
             className="h-full bg-gradient-to-r from-primary to-primary-glow transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
