@@ -54,7 +54,7 @@ export function HeroBanner() {
 
   return (
     <div
-      className="relative overflow-hidden rounded-2xl shadow-card"
+      className="group relative overflow-hidden rounded-2xl shadow-card"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onTouchStart={() => setPaused(true)}
@@ -102,7 +102,7 @@ export function HeroBanner() {
               type="button"
               onClick={(e) => { e.preventDefault(); go(idx - 1); }}
               aria-label="Anterior"
-              className="absolute left-2 top-1/2 z-10 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-background/70 backdrop-blur transition hover:bg-background"
+              className="absolute left-2 top-1/2 z-10 hidden md:grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-background/70 backdrop-blur opacity-0 pointer-events-none transition-all duration-300 md:group-hover:opacity-100 md:group-hover:pointer-events-auto hover:bg-background"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -110,7 +110,7 @@ export function HeroBanner() {
               type="button"
               onClick={(e) => { e.preventDefault(); go(idx + 1); }}
               aria-label="Próximo"
-              className="absolute right-2 top-1/2 z-10 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-background/70 backdrop-blur transition hover:bg-background"
+              className="absolute right-2 top-1/2 z-10 hidden md:grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-background/70 backdrop-blur opacity-0 pointer-events-none transition-all duration-300 md:group-hover:opacity-100 md:group-hover:pointer-events-auto hover:bg-background"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
