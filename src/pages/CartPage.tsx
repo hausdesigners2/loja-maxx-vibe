@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Minus, Plus, Trash2, ShoppingBag, UserIcon, Pencil, CheckCircle2, ShoppingCart } from "lucide-react";
+import { Minus, Plus, Trash2, ShoppingBag, UserIcon, Pencil, CheckCircle2, ShoppingCart, ChevronRight, MapPin } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,6 +11,13 @@ import { CustomerInfo } from "@/lib/whatsapp";
 import { createOrder } from "@/lib/checkout";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 const PAYMENT_METHODS = ["Pix", "Débito", "Crédito", "Dinheiro"] as const;
 
@@ -25,6 +32,7 @@ export default function CartPage() {
   const [notes, setNotes] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
 
   const total = items.reduce((s, it) => s + finalPrice(it.price, it.discount_percent) * it.quantity, 0);
 
@@ -172,34 +180,31 @@ export default function CartPage() {
           </div>
         )}
 
-        {/* Profile summary */}
+        {/* Compact Profile summary card */}
         {user && !loadingProfile && (
-          <div className="rounded-2xl bg-card p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-bold">Dados de entrega</h2>
-              <Button asChild size="sm" variant="outline" disabled={submitted}>
-                <Link to="/conta"><Pencil className="mr-1 h-3 w-3" /> Editar</Link>
-              </Button>
-            </div>
-            {profileComplete ? (
-              <div className="space-y-1 text-sm">
-                <p><span className="text-muted-foreground">Nome:</span> <span className="font-medium">{profile!.full_name}</span></p>
-                <p><span className="text-muted-foreground">Telefone:</span> <span className="font-medium">{profile!.phone}</span></p>
-                <p><span className="text-muted-foreground">Endereço:</span> <span className="font-medium">{profile!.address}{profile!.complement ? ` — ${profile!.complement}` : ""}</span></p>
-                {(profile!.city || profile!.state) && (
-                  <p><span className="text-muted-foreground">Cidade:</span> <span className="font-medium">{[profile!.city, profile!.state].filter(Boolean).join(" / ")}</span></p>
+          <button
+            type="button"
+            onClick={() => setIsAddressModalOpen(true)}
+            className="w-full text-left rounded-2xl bg-card p-4 flex items-center justify-between gap-3 border border-border/40 hover:bg-secondary/20 transition active:scale-[0.99]"
+          >
+            <div className="flex items-start gap-3 min-w-0">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+                <MapPin className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 space-y-0.5">
+                <h2 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">📍 Endereço de entrega</h2>
+                {profileComplete ? (
+                  <>
+                    <p className="text-sm font-bold text-foreground truncate">{profile!.full_name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{profile!.address}</p>
+                  </>
+                ) : (
+                  <p className="text-sm font-semibold text-primary">Complete seus dados para finalizar</p>
                 )}
               </div>
-            ) : (
-              <div className="rounded-lg bg-secondary p-3 text-xs">
-                <p className="font-semibold">Complete seus dados para finalizar.</p>
-                <p className="text-muted-foreground mt-1">Precisamos de nome, telefone e endereço.</p>
-                <Button asChild size="sm" className="mt-2 gradient-primary">
-                  <Link to="/conta">Completar cadastro</Link>
-                </Button>
-              </div>
-            )}
-          </div>
+            </div>
+            <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+          </button>
         )}
 
         {/* Payment method */}
@@ -276,6 +281,77 @@ export default function CartPage() {
           <p className="text-center text-[11px] text-muted-foreground">Seu pedido será enviado para o lojista e ficará disponível em Meus pedidos.</p>
         </div>
       </div>
+
+      {/* Address Details Modal */}
+      <Dialog open={isAddressModalOpen} onOpenChange={setIsAddressModalOpen}>
+        <DialogContent className="max-w-md rounded-2xl bg-card border border-border/40 p-6">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-extrabold flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-primary" /> Dados de entrega
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-4 space-y-4">
+            {profileComplete ? (
+              <div className="space-y-3 text-sm">
+                <div className="grid grid-cols-3 gap-1 border-b border-border/30 pb-2">
+                  <span className="text-muted-foreground font-medium">Nome:</span>
+                  <span className="col-span-2 font-semibold text-foreground">{profile!.full_name}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1 border-b border-border/30 pb-2">
+                  <span className="text-muted-foreground font-medium">Telefone:</span>
+                  <span className="col-span-2 font-semibold text-foreground">{profile!.phone}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1 border-b border-border/30 pb-2">
+                  <span className="text-muted-foreground font-medium">CEP:</span>
+                  <span className="col-span-2 font-semibold text-foreground">{profile!.zip || "—"}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1 border-b border-border/30 pb-2">
+                  <span className="text-muted-foreground font-medium">Endereço:</span>
+                  <span className="col-span-2 font-semibold text-foreground">{profile!.address}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1 border-b border-border/30 pb-2">
+                  <span className="text-muted-foreground font-medium">Complemento:</span>
+                  <span className="col-span-2 font-semibold text-foreground">{profile!.complement || "—"}</span>
+                </div>
+                <div className="grid grid-cols-3 gap-1 pb-1">
+                  <span className="text-muted-foreground font-medium">Cidade/UF:</span>
+                  <span className="col-span-2 font-semibold text-foreground">
+                    {[profile!.city, profile!.state].filter(Boolean).join(" / ") || "—"}
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl bg-secondary/40 p-4 text-center space-y-2">
+                <p className="font-bold text-primary text-sm">Cadastro Incompleto</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Precisamos de nome, telefone e endereço completos para realizar a entrega do seu pedido.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2 border-t border-border/30">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsAddressModalOpen(false)}
+              className="w-full sm:flex-1 h-11 rounded-xl text-sm font-semibold"
+            >
+              Fechar
+            </Button>
+            <Button
+              asChild
+              className="w-full sm:flex-1 h-11 rounded-xl text-sm font-bold gradient-primary shadow-glow"
+            >
+              <Link to="/conta">
+                <Pencil className="mr-1.5 h-4 w-4" />
+                {profileComplete ? "Editar endereço" : "Completar cadastro"}
+              </Link>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }
