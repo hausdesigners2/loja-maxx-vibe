@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-secret',
 }
 
 serve(async (req) => {
@@ -12,19 +12,18 @@ serve(async (req) => {
 
   console.log("[onesignal-notification] Received push dispatch request");
 
-  const authHeader = req.headers.get('Authorization');
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+  const authHeader = req.headers.get('Authorization') || "";
+  const webhookSecretHeader = req.headers.get('X-Webhook-Secret') || "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   
-  // Verify request is authorized (has service role key or correct developer anon key for webhook callbacks)
-  const isAuthorized = authHeader && (
+  // Validação rígida de segurança: exige token service_role válido OU o segredo do webhook do banco de dados
+  const isAuthorized = 
     (serviceKey && authHeader.includes(serviceKey)) || 
-    authHeader.includes(anonKey)
-  );
+    (webhookSecretHeader === "secure_webhook_token_loja_maxx_2026");
 
   if (!isAuthorized) {
-    console.error("[onesignal-notification] Unauthorized webhook trigger attempt");
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    console.error("[onesignal-notification] Unauthorized webhook trigger attempt. Access denied.");
+    return new Response(JSON.stringify({ error: "Unauthorized access" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
@@ -34,7 +33,7 @@ serve(async (req) => {
     const payload = await req.json();
     console.log("[onesignal-notification] Webhook payload:", JSON.stringify(payload));
 
-    // Handle Supabase Webhook envelope formats
+    // Trata os formatos de envelope do Webhook do Supabase
     let record = payload;
     if (payload.record) {
       record = payload.record;

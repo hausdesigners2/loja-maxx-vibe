@@ -63,7 +63,7 @@ serve(async (req) => {
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
     // Recupera o corpo da requisição
-    const { order_id, cpf } = await req.json();
+    const { order_id, cpf, guest_token } = await req.json();
     if (!order_id) {
       console.error("[mercadopago-checkout] Erro: order_id é obrigatório.");
       return new Response(JSON.stringify({ success: false, error: "order_id é obrigatório" }), {
@@ -104,32 +104,58 @@ serve(async (req) => {
       });
     }
 
-    // Garante que o usuário logado só pode gerar pagamento para o próprio pedido
-    if (order.user_id && order.user_id !== user.id) {
-      console.warn(`[mercadopago-checkout] TENTATIVA DE IDOR DETECTADA! Usuário ${user.id} tentou pagar o pedido ${order.id} do usuário ${order.user_id}.`);
-      
-      // Registrar log de violação de segurança
-      try {
-        await supabaseClient.from("security_logs").insert({
-          event_type: "login_failed",
-          user_id: user.id,
-          email: user.email,
-          metadata: {
-            security_alert: "unauthorized_order_payment_attempt",
-            attempted_order_id: order_id,
-            owner_user_id: order.user_id,
-            ip_address: clientIp
-          },
-          user_agent: req.headers.get("user-agent")?.slice(0, 500) || null
+    // [MELHORIA DE SEGURANÇA]: Proteção robusta contra IDOR e controle de acesso para pedidos de visitantes
+    if (order.user_id) {
+      // Se o pedido pertence a um usuário cadastrado, garante que o usuário logado é o dono do pedido
+      if (order.user_id !== user.id) {
+        console.warn(`[mercadopago-checkout] TENTATIVA DE IDOR DETECTADA! Usuário ${user.id} tentou pagar o pedido ${order.id} do usuário ${order.user_id}.`);
+        
+        // Registrar log de violação de segurança
+        try {
+          await supabaseClient.from("security_logs").insert({
+            event_type: "login_failed",
+            user_id: user.id,
+            email: user.email,
+            metadata: {
+              security_alert: "unauthorized_order_payment_attempt",
+              attempted_order_id: order_id,
+              owner_user_id: order.user_id,
+              ip_address: clientIp
+            },
+            user_agent: req.headers.get("user-agent")?.slice(0, 500) || null
+          });
+        } catch (logErr) {
+          console.error("[mercadopago-checkout] Erro ao gravar log de violação IDOR:", logErr);
+        }
+
+        return new Response(JSON.stringify({ success: false, error: "Ação não autorizada. Você só pode pagar os seus próprios pedidos." }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
         });
-      } catch (logErr) {
-        console.error("[mercadopago-checkout] Erro ao gravar log de violação IDOR:", logErr);
+      }
+    } else {
+      // Se o pedido for de visitante (user_id nulo), exige e valida o token de visitante seguro
+      if (!guest_token) {
+        console.warn(`[mercadopago-checkout] TENTATIVA DE ACESSO NÃO AUTORIZADO! Pedido de visitante ${order.id} acessado sem token de visitante.`);
+        return new Response(JSON.stringify({ success: false, error: "Acesso negado. Token de visitante ausente." }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
       }
 
-      return new Response(JSON.stringify({ success: false, error: "Ação não autorizada. Você só pode pagar os seus próprios pedidos." }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+      // Extrai o token de visitante armazenado de forma segura nas notas do pedido
+      const notesText = order.notes || "";
+      const match = notesText.match(/\[GuestToken:\s*([a-f0-9]+)\]/i);
+      const storedGuestToken = match ? match[1] : null;
+
+      if (!storedGuestToken || storedGuestToken !== guest_token) {
+        console.warn(`[mercadopago-checkout] TENTATIVA DE ACESSO NÃO AUTORIZADO! Token de visitante inválido para o pedido ${order.id}.`);
+        return new Response(JSON.stringify({ success: false, error: "Acesso negado. Token de visitante inválido." }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+      console.log(`[mercadopago-checkout] Token de visitante validado com sucesso para o pedido ${order.id}.`);
     }
 
     // Se o pedido já estiver pago, retorna sucesso imediatamente
