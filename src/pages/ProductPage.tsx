@@ -1,6 +1,8 @@
+"use client";
+
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ChevronLeft, Heart, Minus, Plus } from "lucide-react";
+import { ChevronLeft, Heart, Minus, Plus, FileText } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { AppShell } from "@/components/AppShell";
@@ -10,6 +12,13 @@ import { formatBRL, finalPrice } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { escapeHTML } from "@/lib/security";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 type Product = Tables<"products">;
 
@@ -73,8 +82,32 @@ export default function ProductPage() {
             )}
             <span className="text-3xl font-extrabold text-primary">{formatBRL(final)}</span>
           </div>
+          
           {safeDescription && (
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">{safeDescription}</p>
+            <div className="mt-4">
+              <Dialog>
+                <DialogTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-2 rounded-xl bg-secondary/50 px-4 py-2.5 text-xs font-bold text-foreground border border-border/40 hover:bg-secondary transition active:scale-95"
+                  >
+                    <FileText className="h-4 w-4 text-primary" />
+                    <span>Ver descrição do produto</span>
+                  </button>
+                </DialogTrigger>
+                <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-md bg-card border-border rounded-2xl">
+                  <DialogHeader className="border-b border-border/50 pb-3">
+                    <DialogTitle className="text-base font-extrabold text-foreground flex items-center gap-2">
+                      <FileText className="h-5 w-5 text-primary" />
+                      Descrição do produto
+                    </DialogTitle>
+                  </DialogHeader>
+                  <div className="mt-4 text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
+                    {safeDescription}
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
           )}
         </div>
 
