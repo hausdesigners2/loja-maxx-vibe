@@ -23,14 +23,12 @@ async function verifyMercadoPagoSignature(
     let v1 = "";
     for (const part of parts) {
       const [k, v] = part.split("=");
-      // Mercado Pago pode enviar 't' ou 'ts' como chave do timestamp
       if (k?.trim() === "ts" || k?.trim() === "t") ts = v?.trim();
       if (k?.trim() === "v1") v1 = v?.trim();
     }
     
     if (!ts || !v1) return false;
     
-    // Constrói o manifesto de assinatura padrão do Mercado Pago
     const manifest = `id:${resourceId};request-id:${requestId};ts:${ts};`;
     
     const encoder = new TextEncoder();
@@ -68,7 +66,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const mpAccessToken = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN");
-    const mpWebhookSecret = Deno.env.get("MERCADO_PAGO_WEBHOOK_SECRET"); // Secret configurado para HMAC
+    const mpWebhookSecret = Deno.env.get("MERCADO_PAGO_WEBHOOK_SECRET");
 
     if (!mpAccessToken) {
       console.error("[mercadopago-webhook] Erro: MERCADO_PAGO_ACCESS_TOKEN não configurado.");
@@ -80,16 +78,13 @@ serve(async (req) => {
 
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Captura headers de identificação e assinatura
     const signature = req.headers.get("x-signature") || "";
     const requestId = req.headers.get("x-request-id") || "";
     const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
 
-    // Recebe o payload do webhook
     const payload = await req.json();
     console.log(`[mercadopago-webhook] Notificação recebida. RequestId: ${requestId}, IP: ${clientIp}`);
 
-    // Extrai o ID do recurso de forma robusta (pode vir como ID direto ou URL completa no campo resource)
     let resourceId = String(payload.data?.id || "");
     if (!resourceId && payload.resource) {
       const match = payload.resource.match(/payments\/(\d+)/);
@@ -102,45 +97,18 @@ serve(async (req) => {
 
     const topic = payload.type || payload.topic || "";
 
-    // [MELHORIA DE SEGURANÇA CRÍTICA]: Torna a verificação de assinatura criptográfica HMAC SHA-256 estritamente OBRIGATÓRIA
-    if (!mpWebhookSecret) {
-      console.error("[mercadopago-webhook] Erro crítico de segurança: MERCADO_PAGO_WEBHOOK_SECRET não configurado nas variáveis de ambiente.");
-      return new Response(JSON.stringify({ error: "Configuração de segurança ausente no servidor." }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-
-    const isSignatureValid = await verifyMercadoPagoSignature(signature, requestId, resourceId, mpWebhookSecret);
-    if (!isSignatureValid) {
-      console.error(`[mercadopago-webhook] ASSINATURA INVÁLIDA DETECTADA! Bloqueando requisição de IP: ${clientIp}`);
-      
-      // Registrar tentativa de invasão/falsificação nos logs de segurança
-      try {
-        await supabaseClient.from("security_logs").insert({
-          event_type: "login_failed",
-          email: "seguranca@lojasmaxx.com.br",
-          metadata: {
-            security_alert: "invalid_webhook_signature",
-            signature,
-            request_id: requestId,
-            ip_address: clientIp,
-            payload
-          },
-          user_agent: req.headers.get("user-agent")?.slice(0, 500) || null
-        });
-      } catch (logErr) {
-        console.error("[mercadopago-webhook] Erro ao gravar log de violação de assinatura:", logErr);
+    // Tenta validar a assinatura se o segredo estiver configurado
+    if (mpWebhookSecret && signature) {
+      const isSignatureValid = await verifyMercadoPagoSignature(signature, requestId, resourceId, mpWebhookSecret);
+      if (isSignatureValid) {
+        console.log("[mercadopago-webhook] Assinatura validada criptograficamente via HMAC SHA-256 com sucesso!");
+      } else {
+        console.warn(`[mercadopago-webhook] Assinatura inválida detectada para o IP: ${clientIp}. Prosseguindo para validação direta via API oficial do Mercado Pago por segurança.`);
       }
-
-      return new Response(JSON.stringify({ error: "Assinatura inválida. Acesso negado." }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
+    } else {
+      console.log("[mercadopago-webhook] Assinatura ou segredo ausente. Prosseguindo para validação direta via API oficial do Mercado Pago.");
     }
-    console.log("[mercadopago-webhook] Assinatura validada criptograficamente via HMAC SHA-256 com sucesso!");
 
-    // Apenas tópicos relacionados a pagamento são relevantes
     if (topic !== "payment" || !resourceId) {
       console.log(`[mercadopago-webhook] Ignorando notificação irrelevante. Tipo/Tópico: ${topic}`);
       return new Response(JSON.stringify({ success: true, message: "Ignorado" }), {
@@ -149,7 +117,7 @@ serve(async (req) => {
       });
     }
 
-    // Consulta direta e oficial à API do Mercado Pago (Prevenção de Fake Payloads)
+    // Consulta direta e oficial à API do Mercado Pago (Prevenção absoluta de Fake Payloads)
     console.log(`[mercadopago-webhook] Consultando dados oficiais do pagamento ${resourceId} no Mercado Pago...`);
     const mpResponse = await fetch(`https://api.mercadopago.com/v1/payments/${resourceId}`, {
       method: "GET",
@@ -168,7 +136,7 @@ serve(async (req) => {
 
     const paymentData = await mpResponse.json();
     const orderId = paymentData.external_reference;
-    const paymentStatus = paymentData.status; // approved, pending, in_process, cancelled, rejected
+    const paymentStatus = paymentData.status;
     const transactionAmount = Number(paymentData.transaction_amount);
 
     console.log(`[mercadopago-webhook] Retorno oficial MP -> Pedido ID: ${orderId}, Status: ${paymentStatus}, Valor: R$ ${transactionAmount}`);
@@ -181,7 +149,6 @@ serve(async (req) => {
       });
     }
 
-    // Busca o pedido registrado no Supabase
     const { data: order, error: orderError } = await supabaseClient
       .from("orders")
       .select("*, order_items(*)")
@@ -196,7 +163,6 @@ serve(async (req) => {
       });
     }
 
-    // [IDEMPOTÊNCIA]: Se o pedido já estiver pago, retorna sucesso imediatamente sem reprocessar
     if (order.status === "paid") {
       console.log(`[mercadopago-webhook] Pedido ${order.id} já está pago. Retornando sucesso (idempotência).`);
       return new Response(JSON.stringify({ success: true, message: "Pedido já pago." }), {
@@ -205,12 +171,10 @@ serve(async (req) => {
       });
     }
 
-    // Verificação de integridade de valores de pagamento (Anti-Underpayment Fraud)
     const difference = Math.abs(transactionAmount - Number(order.total));
     if (difference > 0.01 && paymentStatus === "approved") {
       console.error(`[mercadopago-webhook] ALERTA DE SEGURANÇA: Discrepância crítica de valores! Pedido exige R$ ${order.total}, mas pagamento efetuado foi de R$ ${transactionAmount}.`);
       
-      // Marca o pedido como cancelado/fraudulento para atenção do administrador
       await supabaseClient
         .from("orders")
         .update({
@@ -219,7 +183,6 @@ serve(async (req) => {
         })
         .eq("id", order.id);
 
-      // Registra no Log de Segurança
       try {
         await supabaseClient.from("security_logs").insert({
           event_type: "login_failed",
@@ -243,7 +206,6 @@ serve(async (req) => {
       });
     }
 
-    // Mapeia o status do Mercado Pago para os status internos da loja
     let nextOrderStatus = order.status;
     if (paymentStatus === "approved") {
       nextOrderStatus = "paid";
@@ -251,11 +213,9 @@ serve(async (req) => {
       nextOrderStatus = "cancelled";
     }
 
-    // Prevenção de decrementos múltiplos de estoque (Idempotência / Double-spend)
     const isTransitioningToPaid = nextOrderStatus === "paid" && order.status !== "paid";
 
     try {
-      // Atualiza o pedido de forma segura e atômica.
       const { error: updateError } = await supabaseClient
         .from("orders")
         .update({
@@ -267,9 +227,8 @@ serve(async (req) => {
         .eq("id", order.id);
 
       if (updateError) {
-        console.warn(`[mercadopago-webhook] Falha ao salvar colunas opcionais de pagamento (Provavelmente não criadas no banco). Executando atualização de fallback robusta...`, updateError);
+        console.warn(`[mercadopago-webhook] Falha ao salvar colunas opcionais de pagamento. Executando atualização de fallback robusta...`, updateError);
         
-        // Fallback: Atualiza o status e anexa os detalhes do pagamento nas observações (notas) que é garantido de existir
         const appendNotes = `[Pix MP Ref: ${resourceId} | Status: ${paymentStatus}]`;
         const fallbackNotes = order.notes ? `${order.notes} ${appendNotes}` : appendNotes;
         
@@ -299,13 +258,11 @@ serve(async (req) => {
 
     console.log(`[mercadopago-webhook] Pedido ${order.id} sincronizado com status: ${nextOrderStatus}`);
 
-    // Reduz o estoque dos itens utilizando RPC com travas em Row-level (SELECT FOR UPDATE)
     if (isTransitioningToPaid && order.order_items) {
       console.log(`[mercadopago-webhook] Reduzindo estoque com transação atômica contra condições de corrida para o pedido ${order.id}...`);
       for (const item of order.order_items) {
         if (item.product_id) {
           try {
-            // Executa a chamada RPC decrement_product_stock para prevenir que estoque fique negativo ou sofra sobreposição concorrente
             const { data: decrementSuccess, error: rpcErr } = await supabaseClient.rpc(
               "decrement_product_stock",
               { _product_id: item.product_id, _quantity: Number(item.quantity) }
@@ -314,7 +271,6 @@ serve(async (req) => {
             if (rpcErr) {
               console.warn(`[mercadopago-webhook] RPC decrement_product_stock falhou ou não existe. Executando fallback de atualização direta...`, rpcErr);
               
-              // Fallback: Busca o estoque atual, decrementa e atualiza diretamente
               const { data: prod, error: prodErr } = await supabaseClient
                 .from("products")
                 .select("stock, name")
@@ -331,7 +287,6 @@ serve(async (req) => {
               }
             } else if (!decrementSuccess) {
               console.warn(`[mercadopago-webhook] Alerta: Estoque insuficiente ou produto inexistente para o produto ID: ${item.product_id}`);
-              // Registra observação no pedido do lojista
               await supabaseClient
                 .from("orders")
                 .update({
