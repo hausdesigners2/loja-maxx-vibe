@@ -47,11 +47,8 @@ const DEFAULT_CATEGORIES = [
   { id: "5", name: "Limpeza", slug: "limpeza", icon: "🧹", sort_order: 5, created_at: "" },
   { id: "6", name: "Biscoitos", slug: "biscoitos", icon: "🍪", sort_order: 6, created_at: "" },
   { id: "7", name: "Bazar", slug: "bazar", icon: "🛍️", sort_order: 7, created_at: "" },
-  { id: "8", name: "Padaria", slug: "padaria", icon: "🍞", sort_order: 8, created_at: "" }
+  { id: "8", name: "Padaria", slug: "padaria", icon: "🥖", sort_order: 8, created_at: "" }
 ];
-
-const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"];
-const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; // 5MB
 
 function mergeCategories(fetched: Category[]): Category[] {
   const map = new Map<string, Category>();
@@ -81,12 +78,50 @@ export default function AdminPage() {
   }, [products, search, sortAsc]);
 
   const reload = async () => {
-    const [{ data: p }, { data: c }] = await Promise.all([
-      supabase.from("products").select("*").order("created_at", { ascending: false }),
-      supabase.from("categories").select("*").order("sort_order"),
-    ]);
+    const { data: fetchedCats, error: catError } = await supabase
+      .from("categories")
+      .select("*")
+      .order("sort_order");
+
+    let finalCats = fetchedCats ?? [];
+
+    if (!catError && fetchedCats) {
+      // Verifica se alguma categoria padrão está ausente no banco de dados
+      const missing = DEFAULT_CATEGORIES.filter(
+        (dc) => !fetchedCats.some((fc) => fc.slug === dc.slug)
+      );
+
+      if (missing.length > 0) {
+        const toInsert = missing.map((c) => ({
+          name: c.name,
+          slug: c.slug,
+          icon: c.icon,
+          sort_order: c.sort_order,
+        }));
+
+        const { error: insertError } = await supabase
+          .from("categories")
+          .insert(toInsert);
+
+        if (!insertError) {
+          const { data: updatedCats } = await supabase
+            .from("categories")
+            .select("*")
+            .order("sort_order");
+          if (updatedCats) {
+            finalCats = updatedCats;
+          }
+        }
+      }
+    }
+
+    const { data: p } = await supabase
+      .from("products")
+      .select("*")
+      .order("created_at", { ascending: false });
+
     setProducts(p ?? []);
-    setCategories(mergeCategories(c ?? []));
+    setCategories(mergeCategories(finalCats));
   };
 
   useEffect(() => {
@@ -130,7 +165,7 @@ export default function AdminPage() {
       const url = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(url);
-        const maxW = 1000; // Resizing for optimal performance & storage efficiency
+        const maxW = 1000;
         const scale = Math.min(1, maxW / img.width);
         const w = Math.round(img.width * scale);
         const h = Math.round(img.height * scale);
@@ -163,7 +198,7 @@ export default function AdminPage() {
     setUploading(true);
     try {
       const blob = await compressImage(file);
-      const ext = "jpg"; // Forçando formato jpeg comprimido
+      const ext = "jpg";
       const path = `${crypto.randomUUID()}.${ext}`;
       
       const { error } = await supabase.storage
