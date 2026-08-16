@@ -20,6 +20,9 @@ import { Admin2FAGuard } from "@/components/Admin2FAGuard";
 type Product = Tables<"products">;
 type Category = Tables<"categories">;
 
+const ALLOWED_MIME = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+const MAX_UPLOAD_SIZE = 5 * 1024 * 1024; // 5MB
+
 interface FormState {
   id?: string;
   name: string;
