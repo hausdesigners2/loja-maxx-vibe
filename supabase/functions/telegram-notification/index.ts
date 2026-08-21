@@ -6,9 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-const TELEGRAM_BOT_TOKEN = "8963845057:AAFM117yeC4-6UYvPry8MJ08BEnJi5jMYIY";
-const TELEGRAM_CHAT_ID = "6068629174";
-
 const STATUS_LABELS: Record<string, string> = {
   pending: "Pendente",
   paid: "Pago",
@@ -27,6 +24,17 @@ serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const telegramBotToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
+    const telegramChatId = Deno.env.get("TELEGRAM_CHAT_ID");
+
+    if (!telegramBotToken || !telegramChatId) {
+      console.error("[telegram-notification] Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID environment variables.");
+      return new Response(JSON.stringify({ error: "Telegram configuration missing on server" }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
     const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
 
     const { order_id, status } = await req.json();
@@ -76,16 +84,16 @@ serve(async (req) => {
       `<b>Itens:</b>\n${itemsList}\n\n` +
       `<b>Total:</b> ${totalFormatted}`;
 
-    console.log(`[telegram-notification] Sending message to Telegram chat ${TELEGRAM_CHAT_ID}`);
+    console.log(`[telegram-notification] Sending message to Telegram chat ${telegramChatId}`);
 
-    const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const telegramUrl = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
     const response = await fetch(telegramUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        chat_id: TELEGRAM_CHAT_ID,
+        chat_id: telegramChatId,
         text: message,
         parse_mode: "HTML"
       })
