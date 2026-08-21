@@ -258,6 +258,22 @@ serve(async (req) => {
 
     console.log(`[mercadopago-webhook] Pedido ${order.id} sincronizado com status: ${nextOrderStatus}`);
 
+    // Trigger Telegram notification on successful payment transition
+    if (isTransitioningToPaid) {
+      try {
+        await fetch(`${supabaseUrl}/functions/v1/telegram-notification`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${supabaseServiceKey}`
+          },
+          body: JSON.stringify({ order_id: order.id, status: nextOrderStatus })
+        });
+      } catch (err) {
+        console.error("[mercadopago-webhook] Erro ao disparar notificação do Telegram:", err);
+      }
+    }
+
     if (isTransitioningToPaid && order.order_items) {
       console.log(`[mercadopago-webhook] Reduzindo estoque com transação atômica contra condições de corrida para o pedido ${order.id}...`);
       for (const item of order.order_items) {

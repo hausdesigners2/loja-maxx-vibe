@@ -192,10 +192,20 @@ export default function AdminDashboardPage() {
   const updateStatus = async (id: string, status: string) => {
     // Automatically mark read when changing its status
     markAsRead(id);
-    const { error } = await supabase.from("orders").update({ status }).eq("id(order_items)" as any).eq("id", id);
     const { error: updErr } = await supabase.from("orders").update({ status }).eq("id", id);
-    if (updErr) toast.error("Falha ao atualizar status");
-    else toast.success(`Status: ${STATUS_LABELS[status] ?? status}`);
+    if (updErr) {
+      toast.error("Falha ao atualizar status");
+    } else {
+      toast.success(`Status: ${STATUS_LABELS[status] ?? status}`);
+      // Trigger Telegram notification
+      try {
+        await supabase.functions.invoke("telegram-notification", {
+          body: { order_id: id, status }
+        });
+      } catch (err) {
+        console.error("Erro ao enviar notificação para o Telegram:", err);
+      }
+    }
   };
 
   const deleteCustomer = async (id: string, name: string) => {
