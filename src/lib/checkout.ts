@@ -19,24 +19,39 @@ export async function createOrder(
   const initialStatus =
     method === "Débito" || method === "Crédito" ? "awaiting_machine" : "pending";
 
-  // Se for um pedido de visitante (userId nulo), gera um token seguro e não adivinhável
-  let guestToken = "";
-  let finalNotes = extras?.notes ?? null;
-
+  // Se for um pedido de visitante (userId nulo), chama a Edge Function segura
   if (!userId) {
-    if (typeof window !== "undefined" && window.crypto) {
-      const array = new Uint32Array(4);
-      window.crypto.getRandomValues(array);
-      guestToken = Array.from(array, dec => dec.toString(16).padStart(8, '0')).join('');
-    } else {
-      guestToken = Math.random().toString(36).substring(2) + Date.now().toString(36);
+    const response = await fetch("https://tnpcrxconafliiuhszcx.supabase.co/functions/v1/guest-order", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ items, customer, extras })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let parsedError;
+      try {
+        parsedError = JSON.parse(errText);
+      } catch {
+        parsedError = { error: errText };
+      }
+      throw new Error(parsedError.error || "Falha ao criar pedido de visitante.");
     }
-    
-    // Anexa o token de visitante de forma segura nas notas do pedido para validação posterior
-    const tokenMarker = `[GuestToken: ${guestToken}]`;
-    finalNotes = finalNotes ? `${finalNotes} ${tokenMarker}` : tokenMarker;
+
+    const data = await response.json();
+    if (data.guest_token && typeof window !== "undefined") {
+      try {
+        localStorage.setItem(`loja-maxx-guest-token-${data.order.id}`, data.guest_token);
+      } catch (e) {
+        console.error("[Checkout] Erro ao salvar token de visitante no localStorage:", e);
+      }
+    }
+    return data.order;
   }
 
+  // Fluxo de usuário autenticado (inserção direta)
   const { data: order, error } = await supabase
     .from("orders")
     .insert({
@@ -51,22 +66,13 @@ export async function createOrder(
       total,
       payment_method: method,
       change_for: extras?.change_for ?? null,
-      notes: finalNotes,
+      notes: extras?.notes ?? null,
       status: initialStatus,
     })
     .select()
     .single();
 
   if (error || !order) throw error ?? new Error("Falha ao criar pedido");
-
-  // Se gerou um token de visitante, salva no localStorage associado ao ID do pedido
-  if (!userId && guestToken && typeof window !== "undefined") {
-    try {
-      localStorage.setItem(`loja-maxx-guest-token-${order.id}`, guestToken);
-    } catch (e) {
-      console.error("[Checkout] Erro ao salvar token de visitante no localStorage:", e);
-    }
-  }
 
   const itemsPayload = items.map((it) => {
     const unit = finalPrice(it.price, it.discount_percent);

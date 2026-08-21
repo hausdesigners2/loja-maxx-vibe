@@ -53,16 +53,32 @@ export default function PixPaymentPage() {
     const loadOrder = async () => {
       try {
         setErrorMessage(null);
-        const { data: ord, error: ordErr } = await supabase
-          .from("orders")
-          .select("*")
-          .eq("id", orderId)
-          .single();
+        const guestToken = localStorage.getItem(`loja-maxx-guest-token-${orderId}`) || "";
+        let ord = null;
 
-        if (ordErr || !ord) {
-          toast.error("Pedido não encontrado.");
-          navigate("/");
-          return;
+        if (guestToken) {
+          // Busca via Edge Function segura para visitantes
+          const response = await fetch(`https://tnpcrxconafliiuhszcx.supabase.co/functions/v1/guest-order?order_id=${orderId}&guest_token=${guestToken}`);
+          if (response.ok) {
+            const data = await response.json();
+            ord = data.order;
+          }
+        }
+
+        if (!ord) {
+          // Fallback para busca direta (usuários autenticados)
+          const { data, error: ordErr } = await supabase
+            .from("orders")
+            .select("*")
+            .eq("id", orderId)
+            .single();
+
+          if (ordErr || !data) {
+            toast.error("Pedido não encontrado.");
+            navigate("/");
+            return;
+          }
+          ord = data;
         }
 
         setOrder(ord);
@@ -117,7 +133,7 @@ export default function PixPaymentPage() {
 
       // Obtém a sessão atual para autenticação na Edge Function
       const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRucGNyeGNvbmFmbGlpdWhzemN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5NDMwODcsImV4cCI6MjA5NDUxOTA4N30.JKH9OSsb6Bk62m92E55DMS0WZXrcw6UPzV6RYSvtG4I";
+      const token = session?.access_token || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRucGNyeGNvbmFmbGlpdWhszcxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5NDMwODcsImV4cCI6MjA5NDUxOTA4N30.JKH9OSsb6Bk62m92E55DMS0WZXrcw6UPzV6RYSvtG4I";
 
       // Recupera o token de visitante seguro do localStorage caso o usuário não esteja logado
       const guestToken = localStorage.getItem(`loja-maxx-guest-token-${orderId}`) || "";
