@@ -133,18 +133,23 @@ export default function PixPaymentPage() {
 
       // Obtém a sessão atual para autenticação na Edge Function
       const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRucGNyeGNvbmFmbGlpdWhszcxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg5NDMwODcsImV4cCI6MjA5NDUxOTA4N30.JKH9OSsb6Bk62m92E55DMS0WZXrcw6UPzV6RYSvtG4I";
+      const token = session?.access_token || "";
 
       // Recupera o token de visitante seguro do localStorage caso o usuário não esteja logado
       const guestToken = localStorage.getItem(`loja-maxx-guest-token-${orderId}`) || "";
 
       // Chamada direta usando a URL absoluta e estática da Edge Function conforme as diretrizes do Supabase
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json"
+      };
+      
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const response = await fetch("https://tnpcrxconafliiuhszcx.supabase.co/functions/v1/mercadopago-checkout", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
+        headers,
         body: JSON.stringify({ order_id: orderId, cpf: cleanCpf, guest_token: guestToken })
       });
 

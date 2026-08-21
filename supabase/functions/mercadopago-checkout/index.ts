@@ -36,33 +36,7 @@ serve(async (req) => {
       });
     }
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
-      console.warn(`[mercadopago-checkout] Requisição rejeitada: cabeçalho Authorization ausente.`);
-      return new Response(JSON.stringify({ success: false, error: "Sessão expirada ou não autenticada." }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-
-    // Inicializa cliente Supabase para validar a sessão do usuário chamador
-    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
-    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: userError } = await userClient.auth.getUser();
-
-    if (userError || !user) {
-      console.warn(`[mercadopago-checkout] Falha na autenticação do token JWT:`, userError);
-      return new Response(JSON.stringify({ success: false, error: "Acesso não autorizado. Faça login novamente." }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Recupera o corpo da requisição
+    // Recupera o corpo da requisição primeiro para podermos identificar se é um pedido de visitante
     const { order_id, cpf, guest_token } = await req.json();
     if (!order_id) {
       console.error("[mercadopago-checkout] Erro: order_id é obrigatório.");
@@ -89,7 +63,9 @@ serve(async (req) => {
       });
     }
 
-    // Busca o pedido e seus itens associados
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Busca o pedido e seus itens associados primeiro para verificar a propriedade (user_id)
     const { data: order, error: orderError } = await supabaseClient
       .from("orders")
       .select("*, order_items(*)")
@@ -104,9 +80,211 @@ serve(async (req) => {
       });
     }
 
-    // [MELHORIA DE SEGURANÇA]: Proteção robusta contra IDOR e controle de acesso para pedidos de visitantes
+    // [MELHORIA DE SEGURANÇA]: Proteção robusta contra IDOR e controle de acesso condicional
     if (order.user_id) {
-      // Se o pedido pertence a um usuário cadastrado, garante que o usuário logado é o dono do pedido
+      // Se o pedido pertence a um usuário cadastrado, exige e valida a sessão do usuário chamador
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        console.warn(`[mercadopago-checkout] Requisição rejeitada: cabeçalho Authorization ausente para pedido autenticado.`);
+        return new Response(JSON.stringify({ success: false, error: "Sessão expirada ou não autenticada." }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+      const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: userError } = await userClient.auth.getUser();
+
+      if (userError || !user) {
+        console.warn(`[mercadopago-checkout] Falha na autenticação do token JWT:`, userError);
+        return new Response(JSON.stringify({ success: false, error: "Acesso não autorizado. Faça login novamente." }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      // Garante que o usuário logado é o dono do pedido
+      if (order.user_id !== user.id) {
+        console.warn(`[mercadopago-checkout] TENTATIVA DE IDOR DETECTADA! Usuário ${user.id} tentou pagar o pedido ${order.id} do usuário ${order.user_id}.`);
+        
+        // Registrar log de violação de segurança
+        try {
+          await supabaseClient.from("security_logs").insert({
+            event_type: "login_failed",
+            user_id: user.id,
+            email: user.email,
+            metadata: {
+              security_alert: "unauthorized_order_payment_attempt",
+              attempted_order_id: order_id,
+              owner_user_id: order.user_id,
+              ip_address: clientIp
+            },
+            user_agent: req.headers.get("user-agent")?.slice(0, 500) || null
+          });
+        } catch (logErr) {
+          console.error("[mercadopago-checkout] Erro ao gravar log de violação IDOR:", logErr);
+        }
+
+        return new Response(JSON.stringify({ success: false, error: "Ação não autorizada. Você só pode pagar os seus próprios pedidos." }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+    } else {
+      // Se o pedido for de visitante (user_id nulo), exige e valida o token de visitante seguro
+      if (!guest_token) {
+        console.warn(`[mercadopago-checkout] TENTATIVA DE ACESSO NÃO AUTORIZADO! Pedido de visitante ${order.id} acessado sem token de visitante.`);
+        return new Response(JSON.stringify({ success: false, error: "Acesso negado. Token de visitante ausente." }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      // Extrai o token de visitante armazenado de forma segura nas notas do pedido
+      const notesText = order.notes || "";
+      const match = notesText.match(/\[GuestToken:\s*([a-f0-9]+)\]/i);
+      const storedGuestToken = match ? match[1] : null;
+
+      if (!storedGuestToken || storedGuestToken !== guest_token) {
+        console.warn(`[mercadopago-checkout] TENTATIVA DE ACESSO NÃO AUTORIZADO! Token de visitante inválido para o pedido ${order.id}.`);
+        return new Response(JSON.stringify({ success: false, error: "Acesso negado. Token de visitante inválido." }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+      console.log(`[mercadopago-checkout] Token de visitante validado com sucesso para o pedido ${order.id}.`);
+    }
+
+    // Se o pedido já estiver pago, retorna sucesso imediatamente
+    if (order.status === "paid") {
+      console.log("[mercadopago-checkout] Pedido já está pago.");
+      const headers = new Headers({ ...corsHeaders, "Content-Type": "application/json" });
+      injectRateLimitHeaders(headers, rateLimitResult);
+      return new Response(JSON.stringify({ success: true, already_paid: true }), {
+        status: 200,
+        headers
+      });
+    }
+
+    // Validação robusta de preços, descontos e total (Anti-Tampering)
+    const orderItems = order.order_items || [];
+    if (orderItems.length === 0) {
+      console.error("[mercadopago-checkout] Erro: O pedido não possui itens.");
+      return new Response(JSON.stringify({ success: false, error: "Pedido inválido: sem itens associados." }), {
+        status: 400,
+        headers: { ...<dyad-write path="supabase/functions/mercadopago-checkout/index.ts" description="Updating the mercadopago-checkout Edge Function to allow secure guest checkout bypass when a valid guest_token is provided.">
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import { rateLimit, SECURITY_POLICIES, generateRateLimitResponse, injectRateLimitHeaders } from "../_shared/rateLimiter.ts"
+import { getCorsHeaders, handleOptions } from "../_shared/cors.ts"
+
+serve(async (req) => {
+  // Handle preflight requests securely
+  const preflight = handleOptions(req);
+  if (preflight) return preflight;
+
+  const corsHeaders = getCorsHeaders(req);
+  const clientIp = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "127.0.0.1";
+
+  // Aplica a política de segurança restrita para rotas sensíveis (máximo 5 tentativas em 15 minutos)
+  const rateLimitResult = await rateLimit(clientIp, "mercadopago-checkout", SECURITY_POLICIES.SENSITIVE);
+  if (!rateLimitResult.allowed) {
+    console.warn(`[mercadopago-checkout] Rate limit excedido para o IP: ${clientIp}`);
+    return generateRateLimitResponse(rateLimitResult);
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const mpAccessToken = Deno.env.get("MERCADO_PAGO_ACCESS_TOKEN");
+
+    console.log("[mercadopago-checkout] Iniciando processo de checkout Pix...");
+
+    if (!mpAccessToken) {
+      console.error("[mercadopago-checkout] Erro: MERCADO_PAGO_ACCESS_TOKEN não configurado nas variáveis de ambiente do Supabase.");
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: "MERCADO_PAGO_ACCESS_TOKEN não configurado no servidor. Contate o administrador." 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // Recupera o corpo da requisição primeiro para podermos identificar se é um pedido de visitante
+    const { order_id, cpf, guest_token } = await req.json();
+    if (!order_id) {
+      console.error("[mercadopago-checkout] Erro: order_id é obrigatório.");
+      return new Response(JSON.stringify({ success: false, error: "order_id é obrigatório" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    if (!cpf) {
+      console.error("[mercadopago-checkout] Erro: CPF é obrigatório para pagamentos Pix.");
+      return new Response(JSON.stringify({ success: false, error: "CPF é obrigatório para pagamentos Pix." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const cleanCpf = cpf.replace(/\D/g, "");
+    if (cleanCpf.length !== 11) {
+      console.error("[mercadopago-checkout] Erro: CPF inválido.");
+      return new Response(JSON.stringify({ success: false, error: "CPF inválido. Certifique-se de digitar 11 números." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Busca o pedido e seus itens associados primeiro para verificar a propriedade (user_id)
+    const { data: order, error: orderError } = await supabaseClient
+      .from("orders")
+      .select("*, order_items(*)")
+      .eq("id", order_id)
+      .single();
+
+    if (orderError || !order) {
+      console.error("[mercadopago-checkout] Erro ao buscar pedido no banco:", orderError);
+      return new Response(JSON.stringify({ success: false, error: "Pedido não encontrado no banco de dados." }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // [MELHORIA DE SEGURANÇA]: Proteção robusta contra IDOR e controle de acesso condicional
+    if (order.user_id) {
+      // Se o pedido pertence a um usuário cadastrado, exige e valida a sessão do usuário chamador
+      const authHeader = req.headers.get("Authorization");
+      if (!authHeader) {
+        console.warn(`[mercadopago-checkout] Requisição rejeitada: cabeçalho Authorization ausente para pedido autenticado.`);
+        return new Response(JSON.stringify({ success: false, error: "Sessão expirada ou não autenticada." }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+      const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: userError } = await userClient.auth.getUser();
+
+      if (userError || !user) {
+        console.warn(`[mercadopago-checkout] Falha na autenticação do token JWT:`, userError);
+        return new Response(JSON.stringify({ success: false, error: "Acesso não autorizado. Faça login novamente." }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      // Garante que o usuário logado é o dono do pedido
       if (order.user_id !== user.id) {
         console.warn(`[mercadopago-checkout] TENTATIVA DE IDOR DETECTADA! Usuário ${user.id} tentou pagar o pedido ${order.id} do usuário ${order.user_id}.`);
         
@@ -262,8 +440,8 @@ serve(async (req) => {
       try {
         await supabaseClient.from("security_logs").insert({
           event_type: "login_failed",
-          user_id: user.id,
-          email: user.email,
+          user_id: order.user_id || null,
+          email: "seguranca@lojasmaxx.com.br",
           metadata: {
             security_alert: "price_tampering_detected",
             order_id: order_id,
@@ -287,16 +465,18 @@ serve(async (req) => {
       });
     }
 
-    // Busca o e-mail do cliente no perfil do banco de dados
-    let customerEmail = user.email || "cliente@lojasmaxx.com.br";
-    const { data: profile } = await supabaseClient
-      .from("customer_profiles")
-      .select("email")
-      .eq("user_id", user.id)
-      .maybeSingle();
-    
-    if (profile?.email && profile.email.includes("@")) {
-      customerEmail = profile.email;
+    // Busca o e-mail do cliente no perfil do banco de dados se for usuário autenticado
+    let customerEmail = "cliente@lojasmaxx.com.br";
+    if (order.user_id) {
+      const { data: profile } = await supabaseClient
+        .from("customer_profiles")
+        .select("email")
+        .eq("user_id", order.user_id)
+        .maybeSingle();
+      
+      if (profile?.email && profile.email.includes("@")) {
+        customerEmail = profile.email;
+      }
     }
 
     // Formata o nome do cliente de forma robusta
@@ -436,4 +616,4 @@ serve(async (req) => {
       }
     );
   }
-})
+});
