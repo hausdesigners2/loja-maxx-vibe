@@ -55,6 +55,8 @@ serve(async (req) => {
       });
     }
 
+    console.log(`[telegram-notification] Fetching order details for ID: ${order_id}`);
+
     // Fetch order details with items
     const { data: order, error: orderError } = await supabaseClient
       .from("orders")
@@ -99,6 +101,7 @@ serve(async (req) => {
     console.log(`[telegram-notification] Sending message to Telegram chat ${telegramChatId}`);
 
     const telegramUrl = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
+    
     const response = await fetch(telegramUrl, {
       method: "POST",
       headers: {
@@ -112,11 +115,16 @@ serve(async (req) => {
     });
 
     const resData = await response.json();
-    console.log("[telegram-notification] Telegram API response:", JSON.stringify(resData));
+    
+    console.log(`[telegram-notification] Telegram API response status: ${response.status}`);
+    console.log(`[telegram-notification] Telegram API response body:`, JSON.stringify(resData));
 
     if (!response.ok) {
+      console.error(`[telegram-notification] Telegram API error details:`, JSON.stringify(resData));
       throw new Error(`Telegram API returned error: ${JSON.stringify(resData)}`);
     }
+
+    console.log("[telegram-notification] Notification sent successfully to Telegram!");
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,
