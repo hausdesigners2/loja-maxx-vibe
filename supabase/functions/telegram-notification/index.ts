@@ -14,6 +14,14 @@ const STATUS_LABELS: Record<string, string> = {
   awaiting_machine: "À receber na Maquininha",
 };
 
+// Função auxiliar para escapar caracteres HTML exigidos pelo parse_mode do Telegram
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&")
+    .replace(/</g, "<")
+    .replace(/>/g, ">");
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -62,20 +70,24 @@ serve(async (req) => {
       });
     }
 
-    const orderNumber = order.order_number || order.id.slice(0, 8);
-    const customerName = order.customer_name || "Cliente";
-    const customerPhone = order.customer_phone || "Não informado";
-    const paymentMethod = order.payment_method || "Não informado";
-    const statusLabel = STATUS_LABELS[status || order.status] || status || order.status;
-    const totalFormatted = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(order.total));
+    const orderNumber = escapeHtml(String(order.order_number || order.id.slice(0, 8)));
+    const customerName = escapeHtml(order.customer_name || "Cliente");
+    const customerPhone = escapeHtml(order.customer_phone || "Não informado");
+    const paymentMethod = escapeHtml(order.payment_method || "Não informado");
+    const statusLabel = escapeHtml(STATUS_LABELS[status || order.status] || status || order.status);
+    const totalFormatted = escapeHtml(new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(order.total)));
 
-    // Format items list
+    // Format items list safely
     const itemsList = (order.order_items || [])
-      .map((it: any) => `• ${it.quantity}x ${it.product_name} - ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(it.subtotal))}`)
+      .map((it: any) => {
+        const name = escapeHtml(it.product_name);
+        const subtotal = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(it.subtotal));
+        return `• ${it.quantity}x ${name} - ${escapeHtml(subtotal)}`;
+      })
       .join("\n");
 
     // Build HTML message for Telegram
-    const message = `<b>🛒 Atualização de Pedido - Lojas Maxx</b>\n\n` +
+    const message = `<b>🛒 Novo Pedido Recebido - Lojas Maxx</b>\n\n` +
       `<b>Pedido:</b> #${orderNumber}\n` +
       `<b>Cliente:</b> ${customerName}\n` +
       `<b>Telefone:</b> ${customerPhone}\n` +
