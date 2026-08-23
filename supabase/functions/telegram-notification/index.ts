@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-secret',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -29,9 +29,55 @@ serve(async (req) => {
 
   console.log("[telegram-notification] Received notification request");
 
+  const authHeader = req.headers.get('Authorization') || "";
+  const webhookSecretHeader = req.headers.get('X-Webhook-Secret') || "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+
+  let isAuthorized = false;
+
+  // 1. Validação via Service Role Key
+  if (serviceKey && authHeader.includes(serviceKey)) {
+    isAuthorized = true;
+  }
+  // 2. Validação via Webhook Secret
+  else if (webhookSecretHeader === "secure_webhook_token_loja_maxx_2026") {
+    isAuthorized = true;
+  }
+  // 3. Validação via JWT de Administrador autenticado
+  else if (authHeader) {
+    try {
+      const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || "", {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: userError } = await userClient.auth.getUser();
+      if (!userError && user) {
+        const adminClient = createClient(supabaseUrl, serviceKey);
+        const { data: roleData } = await adminClient
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id)
+          .eq("role", "admin")
+          .maybeSingle();
+        
+        if (roleData?.role === "admin") {
+          isAuthorized = true;
+        }
+      }
+    } catch (err) {
+      console.error("[telegram-notification] Error verifying user session:", err);
+    }
+  }
+
+  if (!isAuthorized) {
+    console.error("[telegram-notification] Unauthorized access attempt blocked.");
+    return new Response(JSON.stringify({ error: "Unauthorized access" }), {
+      status: 401,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+
   try {
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
     const telegramBotToken = Deno.env.get("TELEGRAM_BOT_TOKEN");
     const telegramChatId = Deno.env.get("TELEGRAM_CHAT_ID");
 
@@ -43,7 +89,7 @@ serve(async (req) => {
       });
     }
 
-    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+    const supabaseClient = createClient(supabaseUrl, serviceKey);
 
     const { order_id, status } = await req.json();
 
