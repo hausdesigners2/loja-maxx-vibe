@@ -33,6 +33,7 @@ serve(async (req) => {
   const webhookSecretHeader = req.headers.get('X-Webhook-Secret') || "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const webhookSecret = Deno.env.get("WEBHOOK_SECRET") || "secure_webhook_token_loja_maxx_2026";
 
   let isAuthorized = false;
 
@@ -41,7 +42,7 @@ serve(async (req) => {
     isAuthorized = true;
   }
   // 2. Validação via Webhook Secret
-  else if (webhookSecretHeader === "secure_webhook_token_loja_maxx_2026") {
+  else if (webhookSecretHeader === webhookSecret) {
     isAuthorized = true;
   }
   // 3. Validação via JWT de Administrador autenticado
@@ -177,7 +178,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error("[telegram-notification] Error:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,

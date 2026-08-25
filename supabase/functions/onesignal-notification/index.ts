@@ -15,11 +15,12 @@ serve(async (req) => {
   const authHeader = req.headers.get('Authorization') || "";
   const webhookSecretHeader = req.headers.get('X-Webhook-Secret') || "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  const webhookSecret = Deno.env.get("WEBHOOK_SECRET") || "secure_webhook_token_loja_maxx_2026";
   
   // Validação rígida de segurança: exige token service_role válido OU o segredo do webhook do banco de dados
   const isAuthorized = 
     (serviceKey && authHeader.includes(serviceKey)) || 
-    (webhookSecretHeader === "secure_webhook_token_loja_maxx_2026");
+    (webhookSecretHeader === webhookSecret);
 
   if (!isAuthorized) {
     console.error("[onesignal-notification] Unauthorized webhook trigger attempt. Access denied.");
