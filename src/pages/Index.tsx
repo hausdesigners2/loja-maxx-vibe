@@ -11,8 +11,6 @@ type Product = Tables<"products">;
 type Category = Tables<"categories">;
 
 const VISIBLE = 8;
-const STEP = 4;
-const INTERVAL_MS = 10000;
 
 const DEFAULT_CATEGORIES = [
   { id: "1", name: "Cereais e Grãos", slug: "cereais-e-graos", icon: "🌾", sort_order: 1, created_at: "" },
@@ -46,8 +44,6 @@ const Index = () => {
   const [bestSellersPool, setBestSellersPool] = useState<Product[]>([]);
   const [featured, setFeatured] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
-  const [offset, setOffset] = useState(0);
-  const [fadeKey, setFadeKey] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -64,30 +60,53 @@ const Index = () => {
 
       // Mescla com a lista padrão em memória para garantir exibição imediata sem precisar gravar no banco
       setCategories(mergeCategories(cats ?? []));
-      setBestSellersPool(shuffle(best.data ?? []));
+      
+      const fetchedBest = best.data ?? [];
+      let orderedBest: Product[] = [];
+
+      try {
+        const sessionOrderRaw = sessionStorage.getItem("loja-maxx-session-bestsellers");
+        if (sessionOrderRaw) {
+          const sessionIds: string[] = JSON.parse(sessionOrderRaw);
+          const idMap = new Map(fetchedBest.map(p => [p.id, p]));
+          
+          // Reconstruct the list in the saved session order
+          const ordered: Product[] = [];
+          sessionIds.forEach(id => {
+            const p = idMap.get(id);
+            if (p) {
+              ordered.push(p);
+              idMap.delete(id);
+            }
+          });
+          
+          // If there are any new best sellers not in the session storage, shuffle and append them
+          const remaining = Array.from(idMap.values());
+          if (remaining.length > 0) {
+            const shuffledRemaining = shuffle(remaining);
+            ordered.push(...shuffledRemaining);
+            // Update session storage with the new complete list of IDs
+            sessionStorage.setItem("loja-maxx-session-bestsellers", JSON.stringify(ordered.map(p => p.id)));
+          }
+          orderedBest = ordered;
+        } else {
+          orderedBest = shuffle(fetchedBest);
+          sessionStorage.setItem("loja-maxx-session-bestsellers", JSON.stringify(orderedBest.map(p => p.id)));
+        }
+      } catch (e) {
+        console.error("Error restoring session best sellers:", e);
+        orderedBest = shuffle(fetchedBest);
+      }
+
+      setBestSellersPool(orderedBest);
       setFeatured(feat.data ?? []);
       setLoading(false);
     })();
   }, []);
 
   const visibleBestSellers = useMemo(() => {
-    const pool = bestSellersPool;
-    if (pool.length === 0) return [];
-    const out: Product[] = [];
-    for (let i = 0; i < Math.min(VISIBLE, pool.length); i++) {
-      out.push(pool[(offset + i) % pool.length]);
-    }
-    return out;
-  }, [bestSellersPool, offset]);
-
-  useEffect(() => {
-    if (bestSellersPool.length <= VISIBLE) return;
-    const id = setInterval(() => {
-      setOffset((o) => (o + STEP) % bestSellersPool.length);
-      setFadeKey((k) => k + 1);
-    }, INTERVAL_MS);
-    return () => clearInterval(id);
-  }, [bestSellersPool.length]);
+    return bestSellersPool.slice(0, VISIBLE);
+  }, [bestSellersPool]);
 
   return (
     <AppShell>
@@ -102,7 +121,7 @@ const Index = () => {
         <section>
           <SectionHeader title="🔥 Mais vendidos" to="/buscar">Os queridinhos da Lojas Maxx</SectionHeader>
           {loading ? <SkeletonGrid /> : visibleBestSellers.length > 0 ? (
-            <div key={fadeKey} className="grid grid-cols-2 gap-3 animate-fade-in">
+            <div className="grid grid-cols-2 gap-3">
               {visibleBestSellers.map((p, i) => <ProductCard key={`${p.id}-${i}`} product={p} />)}
             </div>
           ) : <Empty msg="Nenhum mais vendido por enquanto." />}
