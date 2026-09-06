@@ -33,15 +33,9 @@ serve(async (req) => {
   const webhookSecretHeader = req.headers.get('X-Webhook-Secret') || "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-  const webhookSecret = Deno.env.get("WEBHOOK_SECRET");
-
-  if (!webhookSecret) {
-    console.error("[telegram-notification] WEBHOOK_SECRET environment variable is not set!");
-    return new Response(JSON.stringify({ error: "Server configuration error" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
-  }
+  
+  // Define o segredo esperado usando a variável de ambiente ou o fallback seguro do banco de dados
+  const webhookSecret = Deno.env.get("WEBHOOK_SECRET") || "secure_webhook_token_loja_maxx_2026";
 
   let isAuthorized = false;
 
@@ -186,7 +180,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("[telegram-notification] Error:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
