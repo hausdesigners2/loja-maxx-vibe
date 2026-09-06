@@ -24,11 +24,29 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 // 30 minutes of inactivity → automatic logout
 const INACTIVITY_MS = 30 * 60 * 1000;
 
+// Helper to generate a secure random Base32 secret for TOTP
+function generateBase32Secret(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let secret = "";
+  if (typeof window !== "undefined" && window.crypto) {
+    const array = new Uint8Array(16);
+    window.crypto.getRandomValues(array);
+    for (let i = 0; i < 16; i++) {
+      secret += chars.charAt(array[i] % chars.length);
+    }
+  } else {
+    for (let i = 0; i < 16; i++) {
+      secret += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+  }
+  return secret;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [isAdmin2FAApproved, setIsAdmin2FAApproved] = useState(true);
+  const [isAdmin2FAApproved, setIsAdmin2FAApproved] = useState(false);
   const [loading, setLoading] = useState(true);
   const inactivityTimer = useRef<number | null>(null);
 
@@ -66,9 +84,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(sess);
       setUser(sess?.user ?? null);
       if (sess?.user) {
-        await checkAdmin(sess.user.id);
+        const admin = await checkAdmin(sess.user.id);
         // Link authenticated user session with OneSignal external_id
         loginOneSignalUser(sess.user.id);
+        
+        if (admin) {
+          // Admins must always pass the 2FA challenge on a new session
+          setIsAdmin2FAApproved(false);
+        } else {
+          setIsAdmin2FAApproved(true);
+        }
       } else {
         setIsAdmin(false);
         setIsAdmin2FAApproved(true);
@@ -154,15 +179,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const getAdmin2FASecret = async (): Promise<string | null> => {
-    return null;
+    if (!user) return null;
+    const storageKey = `loja-maxx-admin-2fa-secret-${user.id}`;
+    let secret = localStorage.getItem(storageKey);
+    if (!secret) {
+      secret = generateBase32Secret();
+    }
+    return secret;
   };
 
   const verifyAdmin2FA = async (code: string): Promise<boolean> => {
-    return true;
+    if (!user) return false;
+    const storageKey = `loja-maxx-admin-2fa-secret-${user.id}`;
+    const secret = localStorage.getItem(storageKey);
+    if (!secret) return false;
+
+    const isValid = await verifyTOTP(secret, code);
+    if (isValid) {
+      setIsAdmin2FAApproved(true);
+      void logSecurityEvent("admin_access", { userId: user.id, email: user.email, metadata: { mfa: "totp_success" } });
+    } else {
+      void logSecurityEvent("admin_access_denied", { userId: user.id, email: user.email, metadata: { mfa: "totp_failed" } });
+    }
+    return isValid;
   };
 
   const setupAdmin2FA = async (secret: string, code: string): Promise<boolean> => {
-    return true;
+    if (!user) return false;
+    const isValid = await verifyTOTP(secret, code);
+    if (isValid) {
+      const storageKey = `loja-maxx-admin-2fa-secret-${user.id}`;
+      localStorage.setItem(storageKey, secret);
+      setIsAdmin2FAApproved(true);
+      void logSecurityEvent("admin_access", { userId: user.id, email: user.email, metadata: { mfa: "setup_success" } });
+      return true;
+    }
+    return false;
   };
 
   return (
