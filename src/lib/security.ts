@@ -52,6 +52,23 @@ export function escapeHTML(str: string | null | undefined): string {
   });
 }
 
+/**
+ * Sanitizes a URL to prevent XSS attacks (e.g., javascript: URIs).
+ * Only allows relative paths starting with '/' or absolute URLs starting with 'http://' or 'https://'.
+ */
+export function sanitizeUrl(url: string | null | undefined): string {
+  if (!url) return "#";
+  const sanitized = url.trim();
+  if (
+    sanitized.startsWith("/") ||
+    sanitized.startsWith("http://") ||
+    sanitized.startsWith("https://")
+  ) {
+    return sanitized;
+  }
+  return "#";
+}
+
 /* ---------- Session-Bound CSRF Token System ---------- */
 
 /** Generates a cryptographically random token for secure actions */

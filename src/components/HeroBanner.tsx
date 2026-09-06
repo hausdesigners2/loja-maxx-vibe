@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { cn } from "@/lib/utils";
+import { sanitizeUrl } from "@/lib/security";
 
 type Banner = Tables<"banners">;
 
@@ -43,14 +44,16 @@ export function HeroBanner() {
   const go = (n: number) => setIdx((n + slides.length) % slides.length);
   const current = slides[idx];
 
-  const Wrapper = ({ children }: { children: React.ReactNode }) =>
-    current.link_url ? (
-      <a href={current.link_url} className="absolute inset-0" aria-label={current.title || "Banner"}>
+  const Wrapper = ({ children }: { children: React.ReactNode }) => {
+    const safeLink = current.link_url ? sanitizeUrl(current.link_url) : "#";
+    return current.link_url && safeLink !== "#" ? (
+      <a href={safeLink} className="absolute inset-0" aria-label={current.title || "Banner"}>
         {children}
       </a>
     ) : (
       <div className="absolute inset-0">{children}</div>
     );
+  };
 
   return (
     <div
