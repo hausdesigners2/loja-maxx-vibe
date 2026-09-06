@@ -15,8 +15,16 @@ serve(async (req) => {
   const authHeader = req.headers.get('Authorization') || "";
   const webhookSecretHeader = req.headers.get('X-Webhook-Secret') || "";
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-  const webhookSecret = Deno.env.get("WEBHOOK_SECRET") || "secure_webhook_token_loja_maxx_2026";
+  const webhookSecret = Deno.env.get("WEBHOOK_SECRET");
   
+  if (!webhookSecret) {
+    console.error("[onesignal-notification] WEBHOOK_SECRET environment variable is not set!");
+    return new Response(JSON.stringify({ error: "Server configuration error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+
   // Validação rígida de segurança: exige token service_role válido OU o segredo do webhook do banco de dados
   const isAuthorized = 
     (serviceKey && authHeader.includes(serviceKey)) || 
